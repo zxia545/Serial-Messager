@@ -2,6 +2,210 @@ from enum import IntEnum
 from ..staticVariable.commlon_enum import CommLonCmds
 
 
+class ColumnEventFromDisplay(IntEnum):
+    EVT_EMPTY = 0
+    EVT_ENTRY = 1
+    EVT_EXIT = 2
+    EVT_INIT = 3
+
+    # --------- Generic Timer Events -------------------------
+    EVT_TIMER_MS = 4
+    EVT_TIMER_SEC = 5
+    EVT_TIMER_MIN = 6
+
+    # --------- Personality Event --------------------------
+    EVT_PERSONALITY_UPDATE = 7
+    EVT_PERSONALITY_MISMATCH = 8
+    EVT_SLAVE_JOIN = 9
+    EVT_SLAVE_DONE = 10
+    EVT_MASTER_JOIN_ACK = 11
+    EVT_RETRY_TIMEOUT = 12
+
+    # --------- Display Event --------------------------
+    EVT_DISP_STARTUP_DATA = 13
+    EVT_DISP_CURRENT_SETPOINTS = 14
+    EVT_DISP_CURRENT_MODE = 15
+    EVT_DISP_CURRENT_STATUS = 16
+    EVT_DISP_CURRENT_WIFI = 17
+    EVT_DISP_CURRENT_IO = 18
+
+    EVT_DISP_GET_STARTUP = 19
+    EVT_UPDATE_MODE = 20
+    EVT_UPDATE_SETPOINT = 21
+    EVT_DOOR_ALARM_MUTE = 22
+    EVT_DOOR_ALARM_UNMUTE = 23
+    EVT_DISP_PLAY_BEEP = 24
+    EVT_DISP_PLAY_RASP = 25
+
+    EVT_FORCED_DEFROST = 26
+    EVT_SHABBATH_MODE_ON = 27
+    EVT_SHABBATH_MODE_OFF = 28
+    EVT_SHOWROOM_MODE_ON = 29
+    EVT_SHOWROOM_MODE_OFF = 30
+    EVT_FORCE_ICE_FLIP = 31
+    EVT_BOTTLE_CHILL = 32
+    EVT_FAST_FREEZE = 33
+    EVT_ICE_ON = 34
+    EVT_ICE_BOOST = 35
+    EVT_DISP_CHANGE_TEMP_UNITS = 36
+    EVT_DISP_KEY_AUDIO_MUTE = 37
+    EVT_DISP_KEY_AUDIO_UNMUTE = 38
+
+    EVT_OPT_DNL_CTRL_RESPONSE = 39
+    EVT_OPT_DNL_REQUEST = 40
+
+    EVT_DISP_CURRENT_TEMP = 41
+    EVT_DISP_IO_DIAG_REQ = 42
+    EVT_DISP_TEMP_DIAG_REQ = 43
+    EVT_DISP_FAULT_DIAG_RESP = 44
+    EVT_DISP_FAULT_DIAG_REQ = 45
+    EVT_DISP_DOOR_STATUS = 46
+    EVT_DISP_SET_CONTROL_BITS = 47
+
+    EVT_KEY_TOUCH_TEST = 48
+    EVT_DISP_FAULT = 49
+    EVT_DISP_HEARTBEAT = 50
+    EVT_DISP_CURRENT_FEATURES = 51
+    EVT_DISP_CURRENT_ICEMAKER = 52
+    EVT_DISP_BOTTLE_CHILL_DISABLE_ALARM = 53
+    EVT_REQUEST_WIFI_ON = 54
+    EVT_DISP_FORCE_KEY_AUDIO_MUTE = 55
+    EVT_REQ_SW_VER_AND_CSUM = 56
+    EVT_DISP_SW_VER_AND_CSUM = 57
+    EVT_REQ_DISP_MAX_COOL = 58
+    EVT_MAX_COOL_STATUS = 59
+    EVT_MANUAL_VALVE_CTRL = 60
+    EVT_MANUAL_VALVE_INPOS = 61
+    EVT_DISP_HEARTBEAT_RESP = 62
+    EVT_PERSONALITY_RESET = 63
+    EVT_WATER_FILTER_REPLACE = 64
+    EVT_INSTALLER_MODE_OFF = 65
+    EVT_WATER_FILTER = 66
+    EVT_CTRL_KEY_AUDIO_MUTE = 67
+    EVT_DISP_WATER_DISPENSE_LOCK = 68
+    EVT_DISP_WATER_DISPENSE_UNLOCK = 69
+    EVT_CTRL_FRDG_FREEZER_STATUS = 70
+    EVT_DISP_WINE_OFF = 71
+    EVT_DISP_WINE_LOW = 72
+    EVT_DISP_WINE_HIGH = 73
+    EVT_DISP_WINE_DISPLAY = 74
+    EVT_DISP_WATER_DISPENSE_ON = 75
+    EVT_DISP_WATER_DISPENSE_OFF = 76
+    EVT_SEND_GEA_BOOTLOADER_DATA = 77
+
+    EVT_VIEW_KEY_INPUT = 78
+    EVT_RETRY_BUSY_COMMS_TIMER = 79
+
+    EVT_HEARTBEAT_TIME = 80
+    EVT_DISP_TIMEOUT = 81
+    EVT_DISP_DIAG_TIMEOUT = 82
+    EVT_RETRY_STARUP_TIMER = 83
+    EVT_DOOR_DISP_TIMEOUT = 84
+    EVT_FAULT_TIMEOUT = 85
+    EVT_UPDATE_DISPLAY_PERSONALITY = 86
+    EVT_PERSONALITY_RETRY_ERROR = 87
+    EVT_REQ_MASTER_PERSONALITY = 88
+
+    EVT_OPT_DNL_TO_ERR = 89
+    EVT_OPT_DNL_START = 90
+    EVT_OPT_DNL_END = 91
+    EVT_OPT_DNL_DATA_TOPUP = 92
+    EVT_OPT_DNL_RETRY_TO = 93
+    EVT_DISP_SET_UPPER_SEG_LED_OUTPUTS = 94
+    EVT_DISP_SET_LOWER_SEG_LED_OUTPUTS = 95
+    EVT_DISP_SET_STATUS_LED_OUTPUTS = 96
+    EVT_RETRY_ACK_COMMS_TIMER = 97
+    EVT_SHOWROOM_BLOCK_TIME = 98
+
+    NUM_OF_EVT_SIG_USED = 99
+
+    @classmethod
+    def has_key(cls, name):
+        return name in cls.__members__
+    
+
+# Define the dictionary based on the provided definition
+ColumnUITxUEventAckOrNotAckDict = {
+    ColumnEventFromDisplay.EVT_SLAVE_JOIN: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_SLAVE_DONE: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_DISP_GET_STARTUP: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_UPDATE_SETPOINT: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_UPDATE_MODE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DOOR_ALARM_UNMUTE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DOOR_ALARM_MUTE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_PLAY_BEEP: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_PLAY_RASP: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_FORCED_DEFROST: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_SHOWROOM_MODE_OFF: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_SHOWROOM_MODE_ON: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_SHABBATH_MODE_OFF: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_SHABBATH_MODE_ON: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_FORCE_ICE_FLIP: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_BOTTLE_CHILL: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_FAST_FREEZE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_ICE_ON: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_ICE_BOOST: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_CHANGE_TEMP_UNITS: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_KEY_AUDIO_MUTE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_KEY_AUDIO_UNMUTE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_OPT_DNL_REQUEST: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_DISP_IO_DIAG_REQ: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_DISP_TEMP_DIAG_REQ: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_DISP_FAULT_DIAG_REQ: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_KEY_TOUCH_TEST: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_DISP_BOTTLE_CHILL_DISABLE_ALARM: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_REQUEST_WIFI_ON: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_FORCE_KEY_AUDIO_MUTE: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_SW_VER_AND_CSUM: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_REQ_DISP_MAX_COOL: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_MANUAL_VALVE_CTRL: CommLonCmds.NonAcked,
+    ColumnEventFromDisplay.EVT_DISP_HEARTBEAT_RESP: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_PERSONALITY_RESET: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_INSTALLER_MODE_OFF: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_WATER_FILTER: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_WATER_DISPENSE_LOCK: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_WATER_DISPENSE_UNLOCK: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_WINE_OFF: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_WINE_HIGH: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_WINE_LOW: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_DISP_WINE_DISPLAY: CommLonCmds.Acked,
+    ColumnEventFromDisplay.EVT_SEND_GEA_BOOTLOADER_DATA: CommLonCmds.NonAcked
+}
+
+
+
+ColumnUIStaticEventSet = {
+    # If need to update please refer to UI repo -> StaticEvt.c
+    ColumnEventFromDisplay.EVT_DISP_IO_DIAG_REQ,
+    ColumnEventFromDisplay.EVT_OPT_DNL_START,
+    ColumnEventFromDisplay.EVT_OPT_DNL_END,
+    ColumnEventFromDisplay.EVT_PERSONALITY_MISMATCH,
+    ColumnEventFromDisplay.EVT_PERSONALITY_RETRY_ERROR,
+    ColumnEventFromDisplay.EVT_OPT_DNL_TO_ERR,
+    ColumnEventFromDisplay.EVT_DISP_PLAY_BEEP,
+    ColumnEventFromDisplay.EVT_DISP_PLAY_RASP,
+    ColumnEventFromDisplay.EVT_DOOR_ALARM_UNMUTE,
+    ColumnEventFromDisplay.EVT_DOOR_ALARM_MUTE,
+    ColumnEventFromDisplay.EVT_FORCED_DEFROST,
+    ColumnEventFromDisplay.EVT_FORCE_ICE_FLIP,
+    ColumnEventFromDisplay.EVT_DISP_CHANGE_TEMP_UNITS,
+    ColumnEventFromDisplay.EVT_DISP_KEY_AUDIO_UNMUTE,
+    ColumnEventFromDisplay.EVT_DISP_KEY_AUDIO_MUTE,
+    ColumnEventFromDisplay.EVT_SHABBATH_MODE_OFF,
+    ColumnEventFromDisplay.EVT_SHABBATH_MODE_ON,
+    ColumnEventFromDisplay.EVT_SHOWROOM_MODE_OFF,
+    ColumnEventFromDisplay.EVT_SHOWROOM_MODE_ON,
+    ColumnEventFromDisplay.EVT_DISP_GET_STARTUP,
+    ColumnEventFromDisplay.EVT_DISP_BOTTLE_CHILL_DISABLE_ALARM,
+    ColumnEventFromDisplay.EVT_DISP_FORCE_KEY_AUDIO_MUTE,
+    ColumnEventFromDisplay.EVT_DISP_HEARTBEAT_RESP,
+    ColumnEventFromDisplay.EVT_PERSONALITY_RESET,
+    ColumnEventFromDisplay.EVT_REQ_MASTER_PERSONALITY,
+    ColumnEventFromDisplay.EVT_INSTALLER_MODE_OFF,
+    ColumnEventFromDisplay.EVT_DISP_WATER_DISPENSE_LOCK,
+    ColumnEventFromDisplay.EVT_DISP_WATER_DISPENSE_UNLOCK,
+}
+
 class Integrated60EventFromDisplay(IntEnum):
     """This class is used to store all EVENTs in UI -> UI Repo EdpCfg.h
 

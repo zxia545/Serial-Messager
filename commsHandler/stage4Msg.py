@@ -67,12 +67,11 @@ class Stage4Msg():
     def _int_to_hex_string(self, int_val):
         return f'0x{int_val:04x}'
 
-    def clearAllEEPROM(self):
+    def clearAllEEPROM(self, CLEAR_EEPROM_CMD=[0x91, 0xB7, 0x0D, 0x10, 0x00, 0x1B, 0x7F, 0xC0]):
         """
         This method will send clear all eeprom command to controller board through stage4 protocol
         FPSendMsg("0 0 false $91 $B7 $90 0 $9B $FF")
         """
-        CLEAR_EEPROM_CMD: List[int] = [0x91, 0xB7, 0x0D, 0x10, 0x00, 0x1B, 0x7F, 0xC0]
         RETRY_COUNT: int = 10
         DELAY_BETWEEN_WRITE_AND_READ: float = 0.1
         success_flag = False  # Initialize a flag to track successful completion
@@ -101,6 +100,11 @@ class Stage4Msg():
         # Check if the command was successfully sent, if not, raise an error
         if not success_flag:
             raise RuntimeError('Failed to send clear EEPROM command after maximum retries.')
+        
+    def clearColumnAllEEPROM(self):
+        # FPSendMsg("0 0 false $91 $B7 $90 0 $97 $FF")
+        CLEAR_EEPROM_CMD: List[int] = [0x91, 0xB7, 0x0D, 0x10, 0x00, 0x17, 0x7F, 0xC0]
+        self.clearAllEEPROM(CLEAR_EEPROM_CMD)
 
     def close_stage4(self):
         self._serialComms.close()

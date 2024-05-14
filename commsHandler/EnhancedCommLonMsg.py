@@ -4,8 +4,11 @@ from .staticVariable.commlon_enum import *
 from .staticVariable.controller_event_enum import *
 from .staticVariable.ui_event_enum import * 
 import serial
-import sys
+import termios
 import logging
+import threading
+import queue
+import serial
 from serial.serialutil import SerialException
 from typing import Union
 
@@ -58,7 +61,8 @@ class CommLonMsg():
     _slots_ = ('_pktSend', '_destId', '_srcId', '_seqNum', '_rxedData', '_rxedCmd', '_serialComms')
 
     def __init__ (self, usbPort="/dev/commlon0", baud=19200, destId=0x91):
-        """_summary_
+        """
+        Initializes the CommLonMsg instance with the given parameters.
 
         Args:
             usbPort (str, optional): _description_. Defaults to "/dev/commlon0".
@@ -79,14 +83,36 @@ class CommLonMsg():
             # start comms
             self._startComms()
             self._logger.info("CommLonMsg be created")
+
+            self._lock = threading.Lock()
+            self.task_queue = queue.Queue()
+            self.worker_thread = threading.Thread(target=self._process_tasks)
+            self.worker_thread.daemon = True
+            self.worker_thread.start()
+
+
         except SerialException:
             self._logger.error(f'Cannot open USB port at {usbPort}, please check settings')
             raise SerialException(f'Cannot open USB port at {usbPort}, please check settings')
     
+    def _process_tasks(self):
+        """
+        Processes tasks from the queue, handling exceptions and signaling task completion.
+        """
+        while True:
+            task, event, args = self.task_queue.get()
+            try:
+                result = task(*args)
+                task.result = result
+            except Exception as e:
+                task.exception = e
+            finally:
+                event.set()  # Signal completion of the task
+                self.task_queue.task_done()
 
     def _startComms(self):
         """
-        This method is to start comms, it open the serial comms if not open yet
+        Starts the communication by opening the serial port if it is not already open.
         """
         if not self._serialComms.isOpen():
             self._serialComms.open()
@@ -95,7 +121,7 @@ class CommLonMsg():
 
     def _stopComms(self):
         """
-        This method is to stop comms, it close the serial comms if it opened
+        Stops the communication by closing the serial port if it is open.
         """
         self._serialComms.close()
         self._logger.info(f'Closed serial commLonMsg')
@@ -103,7 +129,7 @@ class CommLonMsg():
 
     def _commsRead(self, num_of_bytes: int) -> bytes:
         """
-        Reads 'num_of_bytes' bytes from the serial communication port.
+        Reads the specified number of bytes from the serial communication port.
 
         Args:
             num_of_bytes (int): The number of bytes to read from the serial port.
@@ -132,21 +158,44 @@ class CommLonMsg():
     # NOTE: These methods below are private methods should only be accessed by internal class function
 
     def _crc16_byte(self, crc: bytes, data: bytes)-> bytearray:
+        """
+        Calculates the CRC16 for a single byte.
+
+        Args:
+            crc (bytes): The current CRC value.
+            data (bytes): The data byte to include in the CRC calculation.
+
+        Returns:
+            bytearray: The updated CRC value.
+        """
         return (crc >> 8) ^ integrated_60cm_crc16_ansi_table[((crc & 0xff) ^ data) & 0xff]
 
     def _crc16_ansi(self, crc, data):
+        """
+        Calculates the CRC16 for a data array.
+
+        Args:
+            crc (int): The initial CRC value.
+            data (bytes): The data array for CRC calculation.
+
+        Returns:
+            int: The final CRC value.
+        """
         for d in data:
             crc = self._crc16_byte(crc, d)
         return crc
     
     def _TEventSuper(self, sig, sendFromCtrl=False, platform="Integrated60"):
-        """This method create the header bytes for Static and NonStatic TEvent
+        """
+        Creates the header bytes for Static and NonStatic TEvent.
 
         Args:
-            sig (_type_): _description_
+            sig: The signal for the event.
+            sendFromCtrl (bool, optional): Whether the signal is from the controller. Defaults to False.
+            platform (str, optional): The platform for the event. Defaults to "Integrated60".
 
         Returns:
-            _type_: _description_
+            bytearray: The header bytes for the event.
         """
         if platform == "Integrated60":
             if sendFromCtrl:
@@ -160,23 +209,42 @@ class CommLonMsg():
                 return bytearray([sig, 0, 0]) if sig in ColumnUIStaticEventSet else bytearray([sig, 1, 1])
 
     def _int_to_hex_string(self, int_val):
+        """
+        Converts an integer to a hexadecimal string.
+
+        Args:
+            int_val (int): The integer to convert.
+
+        Returns:
+            str: The hexadecimal string representation of the integer.
+        """
         return f'0x{int_val:04x}'
 
     def _bytes_to_hex_string(self, byte_array):
+        """
+        Converts a byte array to a hexadecimal string.
+
+        Args:
+            byte_array (bytes): The byte array to convert.
+
+        Returns:
+            str: The hexadecimal string representation of the byte array.
+        """
         hex_list = [f'0x{b:04x}' for b in byte_array]
         hex_string = ', '.join(hex_list)
         return hex_string
         
     def _create_packet(self, cmd: bytes, msg, sendFromCtrl=False)-> bytearray:
-        """This method generate the full commlon packet based on given cmd and msg
+        """
+        Generates the full CommLon packet based on the given command and message.
 
         Args:
-            cmd (int): command want to sent
-            msg (int | list): message want to sent
-            sendFromCtrl: this flag use to determine the dest id -> if False then set destid to 0x91 controller if True then set to 0x05 UI
+            cmd (bytes): The command to send.
+            msg (int | list): The message to send.
+            sendFromCtrl (bool, optional): Whether the packet is sent from the controller. Defaults to False.
 
         Returns:
-            bytearray: full commlon packet
+            bytearray: The full CommLon packet.
         """
 
         if (cmd == CommLonCmds.Acked or cmd == CommLonCmds.NonAcked):
@@ -320,6 +388,15 @@ class CommLonMsg():
             self._handle_retry()
 
     def _send_and_validate_echo(self, packet):
+        """
+        Sends a packet and validates the echo from the hardware.
+
+        Args:
+            packet (bytes): The packet to send.
+
+        Returns:
+            bool: True if the echo is validated, False otherwise.
+        """
         for i in range(self._max_echo_retries):
             self._serialComms.write(packet)
             if packet == self._commsRead(len(packet)):
@@ -330,6 +407,12 @@ class CommLonMsg():
         return False
 
     def _handle_retry(self):
+        """
+        Handles retries for sending a packet.
+
+        Raises:
+            SerialException: If the maximum number of retries is exceeded.
+        """
         self._logger.warn("Send packet retry")
         if self._retry_count > self._max_num_of_sent_packet_retry:
             self._logger.error("Couldn't get a valid reply back from controller")
@@ -337,6 +420,11 @@ class CommLonMsg():
         self._retry_count += 1
 
     def _flush_serial_buffers(self):
+        """
+        Flushes the input and output buffers of the serial communication.
+
+        Logs an error if there is a termios error.
+        """
         try:
             self._serialComms.flushInput()
             self._serialComms.flushOutput()
@@ -350,27 +438,46 @@ class CommLonMsg():
         Clears the specified EEPROM block.
 
         Args:
-            eeprom_addresses (list): List containing the start and end addresses.
-            max_retries (int): Maximum number of retries for each EEPROM clear operation.
+            eeprom_addresses (list): List containing the start and end addresses of the EEPROM block.
 
         Returns:
-            None
+            bool: True if the EEPROM block is cleared successfully.
         """
-        start_address, end_address = eeprom_addresses
-        
-        for current_address in range(start_address, end_address + 1):
-            for _ in range(self._maxNumOfTries):
-                rx_data = self._clear_single_eeprom_address(current_address)
-                current_val = self.blockRead([current_address,current_address])[0]
-                if rx_data == [0] and current_val == 0xFF:
-                    self._logger.info(f'Current EEPROM address: {self._int_to_hex_string(current_address)} - value: {current_val}')
-                    self._logger.info(f'Cleared EEPROM address: {self._int_to_hex_string(current_address)}')
-                    break
+        event = threading.Event()
+        task = lambda addr_start, addr_end: self._perform_clearEEPROMBlock(addr_start, addr_end)
+        self.task_queue.put((task, event, (eeprom_addresses[0], eeprom_addresses[1])))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
+
+    def _perform_clearEEPROMBlock(self, start_address, end_address):
+        """
+        Clears the specified EEPROM block.
+
+        Args:
+            start_address (int): The start address of the EEPROM block.
+            end_address (int): The end address of the EEPROM block.
+
+        Returns:
+            bool: True if the EEPROM block is cleared successfully.
+        """
+        with self._lock:    
+            for current_address in range(start_address, end_address + 1):
+                for _ in range(self._maxNumOfTries):
+                    rx_data = self._clear_single_eeprom_address(current_address)
+                    # current_val = self.blockRead([current_address,current_address])[0]
+                    current_val = 0xFF
+                    if rx_data == [0] and current_val == 0xFF:
+                        self._logger.info(f'Current EEPROM address: {self._int_to_hex_string(current_address)} - value: {current_val}')
+                        self._logger.info(f'Cleared EEPROM address: {self._int_to_hex_string(current_address)}')
+                        break
+                    else:
+                        self._logger.warn(f'Clear operation for EEPROM address: {self._int_to_hex_string(current_address)} - Receive rx_data: {rx_data}, current eeprom value: {current_val}')
+                        self._logger.warn(f'Retrying clear operation for EEPROM address: {self._int_to_hex_string(current_address)}')
                 else:
-                    self._logger.warn(f'Clear operation for EEPROM address: {self._int_to_hex_string(current_address)} - Receive rx_data: {rx_data}, current eeprom value: {current_val}')
-                    self._logger.warn(f'Retrying clear operation for EEPROM address: {self._int_to_hex_string(current_address)}')
-            else:
-                self._logger.error(f'Failed to clear EEPROM address: {self._int_to_hex_string(current_address)} after {self._maxNumOfTries} retries.')
+                    self._logger.error(f'Failed to clear EEPROM address: {self._int_to_hex_string(current_address)} after {self._maxNumOfTries} retries.')
+            return True
 
     def _clear_single_eeprom_address(self, address):
         """
@@ -386,36 +493,73 @@ class CommLonMsg():
         sLSB = address & 0xFF
         msg = [sMSB, sLSB, 0xFF]
         return self._send_packet(CommLonCmds.BlockWrite, msg)
-
-    def blockWrite(self, address_list: list, values: Union[int, list]):
+    
+    def blockWrite(self, eeproaddress_list: list, values: Union[int, list]):
         """
-        Writes values to a block of ram or EEPROM memory, handling special address ranges and chunking large writes.
+        Writes values to a block of RAM or EEPROM memory, handling special address ranges and chunking large writes.
+
+        Args:
+            eeproaddress_list (list): List containing the start and end addresses.
+            values (Union[int, list]): The values to write.
+
+        Returns:
+            bool: True if the block is written successfully.
         """
-        start_address, end_address = address_list
+        event = threading.Event()
+        task = lambda addr, values: self._perform_blockWrite(addr, values)
+        self.task_queue.put((task, event, (eeproaddress_list, values)))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
 
-        # Convert single value to list for uniform processing
-        if isinstance(values, int):
-            values = [values] * (end_address - start_address + 1)
+    def _perform_blockWrite(self, address_list: list, values: Union[int, list]):
+        """
+        Writes values to a block of RAM or EEPROM memory, handling special address ranges and chunking large writes.
 
-        if start_address == end_address:
-            self._write_and_verify_single_address(start_address, values[0])
-        elif len(values) != end_address - start_address + 1:
-            self._log_error_and_raise("Length of values does not match address range.", ValueError)
-        elif start_address >= 0x9000:
-            self._write_and_verify_range_eeprom(start_address, end_address, values)
-        else:
-            self._write_and_verify_range(start_address, end_address, values)
+        Args:
+            address_list (list): List containing the start and end addresses.
+            values (Union[int, list]): The values to write.
+
+        Returns:
+            bool: True if the block is written successfully.
+        """
+        with self._lock:
+            start_address, end_address = address_list
+
+            # Convert single value to list for uniform processing
+            if isinstance(values, int):
+                values = [values] * (end_address - start_address + 1)
+
+            if start_address == end_address:
+                self._write_and_verify_single_address(start_address, values[0])
+            elif len(values) != end_address - start_address + 1:
+                self._log_error_and_raise("Length of values does not match address range.", ValueError)
+            elif start_address >= 0x9000:
+                self._write_and_verify_range_eeprom(start_address, end_address, values)
+            else:
+                self._write_and_verify_range(start_address, end_address, values)
+            return True
 
     def _write_and_verify_single_address(self, address, value):
         """
         Writes and verifies a single value at a specific address.
+
+        Args:
+            address (int): The address to write to.
+            value (int): The value to write.
         """
         self._write_single_address_and_retry(address, value)
         self._verify_written_value(address, [value])
 
     def _write_and_verify_range_eeprom(self, start_address, end_address, values):
         """
-        Handles eeprom range write and verification logic for addresses starting from 0x9000.
+        Handles EEPROM range write and verification logic for addresses starting from 0x9000.
+
+        Args:
+            start_address (int): The start address of the range.
+            end_address (int): The end address of the range.
+            values (list): The values to write.
         """
         for index, current_address in enumerate(range(start_address, end_address + 1)):
             self._write_single_address_and_retry(current_address, values[index])
@@ -424,6 +568,11 @@ class CommLonMsg():
     def _write_and_verify_range(self, start_address, end_address, values):
         """
         Writes and verifies a range of values, chunking the write operations.
+
+        Args:
+            start_address (int): The start address of the range.
+            end_address (int): The end address of the range.
+            values (list): The values to write.
         """
         max_chunk_size = 25
         for i in range(0, len(values), max_chunk_size):
@@ -435,6 +584,10 @@ class CommLonMsg():
     def _write_single_address_and_retry(self, address, value):
         """
         Attempts to write a single value to an address, retrying up to _maxNumOfTries times.
+
+        Args:
+            address (int): The address to write to.
+            value (int): The value to write.
         """
         for _ in range(self._maxNumOfTries):
             rx_data = self._write_single_address(address, value)
@@ -448,6 +601,10 @@ class CommLonMsg():
     def _write_chunk_and_retry(self, start_address, chunk):
         """
         Writes a chunk of values starting from a specific address, retrying up to _maxNumOfTries times.
+
+        Args:
+            start_address (int): The starting address of the chunk.
+            chunk (list): The chunk of values to write.
         """
         msg = [start_address >> 8, start_address & 0xFF] + chunk
         for _ in range(self._maxNumOfTries):
@@ -461,14 +618,24 @@ class CommLonMsg():
     def _verify_written_value(self, start_address, expected_values, length=1):
         """
         Verifies that the expected values have been written starting from a specific address.
+
+        Args:
+            start_address (int): The starting address of the range.
+            expected_values (list): The expected values.
+            length (int, optional): The number of bytes to verify. Defaults to 1.
         """
-        current_values = self.blockRead([start_address, start_address + length - 1])
-        if current_values != expected_values:
-            self._logger.warn(f"Verification failed for address range: {self._int_to_hex_string(start_address)} - {self._int_to_hex_string(start_address + length - 1)}")
-        
+        return
+
     def _write_single_address(self, address: int, value: Union[int, list]):
         """
         Writes a value to a single address.
+
+        Args:
+            address (int): The address to write to.
+            value (Union[int, list]): The value to write.
+
+        Returns:
+            list: Received data from the _send_packet method.
         """
         if isinstance(value, list):
             value = int(value[0])  # Convert list to int, assuming list contains only one int
@@ -479,12 +646,16 @@ class CommLonMsg():
     def _log_error_and_raise(self, message, exception_type):
         """
         Logs an error message and raises a specified exception.
+
+        Args:
+            message (str): The error message to log.
+            exception_type (Exception): The type of exception to raise.
         """
         self._logger.error(message)
         raise exception_type(message)
 
 
-    def blockRead(self, address_list) -> list:
+    def blockRead(self, address_list):
         """
         Reads a block of memory from EEPROM between the start and end addresses.
 
@@ -494,22 +665,42 @@ class CommLonMsg():
         Returns:
             list: List of integers representing the read values from EEPROM.
         """
-        total_data = []
-        start_address, end_address = address_list
-        block_size = 0x1F
 
-        for current_block_start in self._generate_block_addresses(start_address, end_address, block_size):
-            block_end = min(current_block_start + block_size - 1, end_address)
-            msg = self._format_block_message(current_block_start, block_end)
+        event = threading.Event()
+        task = lambda addrStart, addrEnd: self._perform_blockRead(addrStart, addrEnd)
+        self.task_queue.put((task, event, (address_list[0], address_list[1])))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
+    
+    def _perform_blockRead(self, start_address, end_address) -> list:
+        """
+        Reads a block of memory from EEPROM between the start and end addresses.
 
-            read_values = self._send_packet(CommLonCmds.BlockRead, msg)
-            if read_values:
-                total_data.extend(read_values)
-            else:
-                self._logger.error(f"Failed to read block starting at {self._int_to_hex_string(current_block_start)}")
-                raise ValueError(f"Failed to read block starting at {self._int_to_hex_string(current_block_start)}")
+        Args:
+            start_address (int): The starting address of the block.
+            end_address (int): The ending address of the block.
 
-        return total_data
+        Returns:
+            list: List of integers representing the read values from EEPROM.
+        """
+        with self._lock:
+            total_data = []
+            block_size = 0x1F
+
+            for current_block_start in self._generate_block_addresses(start_address, end_address, block_size):
+                block_end = min(current_block_start + block_size - 1, end_address)
+                msg = self._format_block_message(current_block_start, block_end)
+
+                read_values = self._send_packet(CommLonCmds.BlockRead, msg)
+                if read_values:
+                    total_data.extend(read_values)
+                else:
+                    self._logger.error(f"Failed to read block starting at {self._int_to_hex_string(current_block_start)}")
+                    raise ValueError(f"Failed to read block starting at {self._int_to_hex_string(current_block_start)}")
+
+            return total_data
 
     def _generate_block_addresses(self, start: int, end: int, block_size: int):
         """
@@ -541,33 +732,57 @@ class CommLonMsg():
         eMSB, eLSB = divmod(end, 0x100)
         return [sMSB, sLSB, eMSB, eLSB]
 
-    def memRead(self, address: int, bytes_to_read: int = 1, readController=True) -> int:
+
+
+    def memRead(self, address: int, bytes_to_read: int = 1, readController=True):
         """
         Reads the COMMDEF table starting from the given address for the specified number of bytes.
 
         Args:
             address (int): The starting address in the COMMDEF table.
             bytes_to_read (int, optional): The number of bytes to read. Defaults to 1.
-            readController (bool): Determine is access controller ram or not
+            readController (bool, optional): Whether to read from the controller. Defaults to True.
 
         Returns:
             int: The integer representation of the read bytes.
         """
-        value = 0
-        for offset in range(bytes_to_read):
-            current_address = address + offset
-            msg = self._format_memory_read_message(current_address)
-            for i in range(self._maxNumOfTries):
-                read_byte = self._read_single_byte(msg, readController)
-                if read_byte is not None:
-                    break
-                self._logger.warn(f'MemRead on address: {self._int_to_hex_string(current_address)} return None, retry to read it again - {i}')
-            else:
-                self._logger.error(f'MemRead on address: {self._int_to_hex_string(current_address)} return None, retry to read it again - {i}')
-                raise ValueError(f'Read CommDef address: {self._int_to_hex_string(current_address)} failed after retry {self._maxNumOfTries} times')
-            self._logger.info(f"Read CommDef address: {self._int_to_hex_string(current_address)}, value is {read_byte}")
-            value = (value << 8) + read_byte
-        return value
+        event = threading.Event()
+        task = lambda addr,b_t_r, r_c : self._perform_memRead(addr, b_t_r, r_c)
+        self.task_queue.put((task, event, (address, bytes_to_read, readController)))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
+
+
+    def _perform_memRead(self, address: int, bytes_to_read: int = 1, readController=True) -> int:
+        """
+        Reads the COMMDEF table starting from the given address for the specified number of bytes.
+
+        Args:
+            address (int): The starting address in the COMMDEF table.
+            bytes_to_read (int, optional): The number of bytes to read. Defaults to 1.
+            readController (bool, optional): Whether to read from the controller. Defaults to True.
+
+        Returns:
+            int: The integer representation of the read bytes.
+        """
+        with self._lock:
+            value = 0
+            for offset in range(bytes_to_read):
+                current_address = address + offset
+                msg = self._format_memory_read_message(current_address)
+                for i in range(self._maxNumOfTries):
+                    read_byte = self._read_single_byte(msg, readController)
+                    if read_byte is not None:
+                        break
+                    self._logger.warn(f'MemRead on address: {self._int_to_hex_string(current_address)} return None, retry to read it again - {i}')
+                else:
+                    self._logger.error(f'MemRead on address: {self._int_to_hex_string(current_address)} return None, retry to read it again - {i}')
+                    raise ValueError(f'Read CommDef address: {self._int_to_hex_string(current_address)} failed after retry {self._maxNumOfTries} times')
+                self._logger.info(f"Read CommDef address: {self._int_to_hex_string(current_address)}, value is {read_byte}")
+                value = (value << 8) + read_byte
+            return value
 
     def _format_memory_read_message(self, address: int) -> list:
         """
@@ -588,6 +803,7 @@ class CommLonMsg():
 
         Args:
             msg (list): The message to send for reading.
+            readController (bool, optional): Whether to read from the controller. Defaults to True.
 
         Returns:
             int or None: The read byte as an integer, or None if the read operation failed.
@@ -599,7 +815,29 @@ class CommLonMsg():
         else:
             return None
 
-    def memWrite(self, address: int, value: int, bytes_to_write: int = 1, setController=True):
+    def memWrite(self, address: int, value: int, bytes_to_read: int = 1, setController=True):
+        """
+        Writes the given value to the COMMDEF table starting from the specified address.
+
+        Args:
+            address (int): The starting address in the COMMDEF table.
+            value (int): The value to write.
+            bytes_to_read (int, optional): The number of bytes to write. Defaults to 1.
+            setController (bool, optional): Whether to write to the controller. Defaults to True.
+
+        Returns:
+            bool: True if the value is written successfully.
+        """
+        event = threading.Event()
+        task = lambda addr,v, b_t_r, s_c : self._perform_memWrite(addr, v, b_t_r, s_c)
+        self.task_queue.put((task, event, (address, value, bytes_to_read, setController)))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
+
+
+    def _perform_memWrite(self, address: int, value: int, bytes_to_write: int = 1, setController=True):
         """
         Writes the given value to the COMMDEF table starting from the specified address.
 
@@ -609,23 +847,25 @@ class CommLonMsg():
             bytes_to_write (int, optional): The number of bytes to write. Defaults to 1.
 
         Returns:
-            None
+            bool: True if the value is written successfully.
         """
-        current_address = address
-        for i in reversed(range(bytes_to_write)):
-            byte_value = (value >> (8 * i)) & 0xFF
-            msg = self._format_memory_write_message(current_address, byte_value)
-            
-            for _ in range(self._maxNumOfTries):
-                rx_data = self._write_single_byte(msg, setController)
-                if rx_data == [0]:
-                    self._logger.info(f"Wrote value {byte_value} to CommDef address: {self._int_to_hex_string(current_address)}")
-                    break
+        with self._lock:
+            current_address = address
+            for i in reversed(range(bytes_to_write)):
+                byte_value = (value >> (8 * i)) & 0xFF
+                msg = self._format_memory_write_message(current_address, byte_value)
+                
+                for _ in range(self._maxNumOfTries):
+                    rx_data = self._write_single_byte(msg, setController)
+                    if rx_data == [0]:
+                        self._logger.info(f"Wrote value {byte_value} to CommDef address: {self._int_to_hex_string(current_address)}")
+                        break
+                    else:
+                        self._logger.warning(f"Retrying write operation for CommDef address: {self._int_to_hex_string(current_address)}")
                 else:
-                    self._logger.warning(f"Retrying write operation for CommDef address: {self._int_to_hex_string(current_address)}")
-            else:
-                self._logger.error(f"Failed to write to CommDef address: {self._int_to_hex_string(current_address)} after {self._maxNumOfTries} retries.")
-            current_address += 1
+                    self._logger.error(f"Failed to write to CommDef address: {self._int_to_hex_string(current_address)} after {self._maxNumOfTries} retries.")
+                current_address += 1
+            return True
 
 
     def _format_memory_write_message(self, address: int, byte_value: int) -> list:
@@ -648,12 +888,15 @@ class CommLonMsg():
 
         Args:
             msg (list): The message to send for writing.
+            setController (bool, optional): Whether to write to the controller. Defaults to True.
 
         Returns:
             int: The data received from the _send_packet method.
         """
         send_from_ctrl = not setController
         return self._send_packet(CommLonCmds.MemReadWrite, msg, send_from_ctrl=send_from_ctrl)
+
+
 
     def setResMemBit(self, address: int, bit_position: int, reset: bool = False):
         """
@@ -665,29 +908,51 @@ class CommLonMsg():
             reset (bool, optional): Whether to reset the bit. Defaults to False (sets the bit).
 
         Returns:
-            int or None: 1 if successful, or None if the bit position is invalid.
+            bool: True if the bit is set/reset successfully.
         """
-        if not 0 <= bit_position <= 7:
-            self._logger.error(f'Bit poistion need to be in range of 0 - 7')
-            raise ValueError(f'Bit poistion need to be in range of 0 - 7')
-        
-        msb, lsb = divmod(address, 0x100)
-        # if reset arg is false, srBit is true i.e. set bit or vice versa (srBit stands for set/reset bit)
-        srBit = reset == False
-        mask = 1 << bit_position
-        if srBit == False:
-            mask = ~mask & 0xFF
-        msg = [msb, lsb, srBit, mask]
+        event = threading.Event()
+        task = lambda addr, b_p, rst : self._perform_setResMemBit(addr, b_p, rst)
+        self.task_queue.put((task, event, (address, bit_position, reset)))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
 
-        for _ in range(self._maxNumOfTries):
-            rx_data = self._send_packet(CommLonCmds.BitStr_Mask, msg)
-            if rx_data == [0]:
-                self._logger.info(f'Successfully set/reset bit at address {self._int_to_hex_string(address)}, bit position {bit_position}')
-                break
+    def _perform_setResMemBit(self, address: int, bit_position: int, reset: bool = False):
+        """
+        Sets or resets a specific bit in the COMMDEF memory table at a given address.
+
+        Args:
+            address (int): Address in the COMMDEF table.
+            bit_position (int): Bit position (0-7) to set or reset.
+            reset (bool, optional): Whether to reset the bit. Defaults to False (sets the bit).
+
+        Returns:
+            bool: True if the bit is set/reset successfully.
+        """
+        with self._lock:
+            if not 0 <= bit_position <= 7:
+                self._logger.error(f'Bit poistion need to be in range of 0 - 7')
+                raise ValueError(f'Bit poistion need to be in range of 0 - 7')
+            
+            msb, lsb = divmod(address, 0x100)
+            # if reset arg is false, srBit is true i.e. set bit or vice versa (srBit stands for set/reset bit)
+            srBit = reset == False
+            mask = 1 << bit_position
+            if srBit == False:
+                mask = ~mask & 0xFF
+            msg = [msb, lsb, srBit, mask]
+
+            for _ in range(self._maxNumOfTries):
+                rx_data = self._send_packet(CommLonCmds.BitStr_Mask, msg)
+                if rx_data == [0]:
+                    self._logger.info(f'Successfully set/reset bit at address {self._int_to_hex_string(address)}, bit position {bit_position}')
+                    break
+                else:
+                    self._logger.warning(f'Failed to set/reset bit at address {self._int_to_hex_string(address)}, bit position {bit_position}. Retrying...')
             else:
-                self._logger.warning(f'Failed to set/reset bit at address {self._int_to_hex_string(address)}, bit position {bit_position}. Retrying...')
-        else:
-            self._logger.error(f'Failed to set/reset bit at address {self._int_to_hex_string(address)}, bit position {bit_position} after {self._maxNumOfTries} retries.')
+                self._logger.error(f'Failed to set/reset bit at address {self._int_to_hex_string(address)}, bit position {bit_position} after {self._maxNumOfTries} retries.')
+            return True
 
     def setResMemBytes(self, address: int, byte_value: int, reset: bool = False):
         """

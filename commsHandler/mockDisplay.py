@@ -1,6 +1,6 @@
 from serial.serialutil import SerialException
 from .singletonMeta import SingletonMeta
-from .commLonMsg import CommLonMsg
+from .EnhancedCommLonMsg import CommLonMsg
 from .staticVariable.commlon_enum import *
 from .staticVariable.tempSensorCovert import *
 from .staticVariable.controller_event_enum import *
@@ -44,11 +44,18 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         self.logger = logging.getLogger(__class__.__name__)
         self.logger.info("MockDisplay be created")
 
-    def validate_tx_event(self, txEvent, isControllerTxEvent):
-        if isControllerTxEvent:
-            packet_cmd = integrated60ControllerTxEventAckOrNotAckDict.get(txEvent)
-        else:
-            packet_cmd = integrated60UITxUEventAckOrNotAckDict.get(txEvent)
+    def validate_tx_event(self, txEvent, isControllerTxEvent, platform):
+        if platform == "Integrated60":
+            if isControllerTxEvent:
+                packet_cmd = integrated60ControllerTxEventAckOrNotAckDict.get(txEvent)
+            else:
+                packet_cmd = integrated60UITxUEventAckOrNotAckDict.get(txEvent)
+        elif platform == "column":
+            if isControllerTxEvent:
+                packet_cmd = ColumnControllerTxEventAckOrNotAckDict.get(txEvent)
+            else:
+                packet_cmd = ColumnUITxUEventAckOrNotAckDict.get(txEvent)
+
         if packet_cmd is None:
             self.logger.error(f'Provided TX Event: {txEvent} not supported')
             raise ValueError(f'Provided TX Event: {txEvent} not supported')
@@ -61,7 +68,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             return False
         return True
 
-    def sentAndCheckTxEvent(self, maxRetry, txEvent, checkCallbackMethod, customizedMsg=None, isControllerTxEvent=False):
+    def sentAndCheckTxEvent(self, maxRetry, txEvent, checkCallbackMethod, customizedMsg=None, isControllerTxEvent=False, platform="Integrated60"):
         """This is a generate method for sent display Tx event -> TEvent and check if it be set
 
         Args:
@@ -73,10 +80,15 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         """
 
         # Validate the transaction event
-        packet_cmd = self.validate_tx_event(txEvent, isControllerTxEvent)
+        packet_cmd = self.validate_tx_event(txEvent, isControllerTxEvent, platform)
         
         # Prepare the message
-        msg = customizedMsg if customizedMsg else self._TEventSuper(txEvent, sendFromCtrl=isControllerTxEvent)
+        msg = customizedMsg if customizedMsg else self._TEventSuper(txEvent, sendFromCtrl=isControllerTxEvent, platform=platform)
+        
+        if platform == "Integrated60":
+            event_name = Integrated60EventFromController(txEvent).name if isControllerTxEvent else Integrated60EventFromDisplay(txEvent).name
+        elif platform == "column":
+            event_name = ColumnEventFromController(txEvent).name if isControllerTxEvent else ColumnEventFromDisplay(txEvent).name
 
         for i in range(maxRetry):
             # Send packet and check acknowledgment
@@ -86,7 +98,6 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
 
             # Check callback method
             if checkCallbackMethod():
-                event_name = Integrated60EventFromController(txEvent).name if isControllerTxEvent else Integrated60EventFromDisplay(txEvent).name
                 self.logger.info(f'{"Controller" if isControllerTxEvent else "Display"} {event_name} has been set')
                 return
 
@@ -94,7 +105,6 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             time.sleep(2)
             
         # If this point is reached, all retries have failed
-        event_name = Integrated60EventFromController(txEvent).name if isControllerTxEvent else Integrated60EventFromDisplay(txEvent).name
         self.logger.error(f'Unable to set {"Controller" if isControllerTxEvent else "Display"} event: {event_name}')
         raise RuntimeError(f'Unable to set {"Controller" if isControllerTxEvent else "Display"} event: {event_name}')
     
@@ -247,6 +257,13 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         minor_id = super().memRead(0x0014, readController=False)
         development_id = super().memRead(0x0015, readController=False)
         return [major_id, minor_id, development_id]
+
+    def read_controller_crc(self):
+        return super().memRead(Integrated60CommDef.Controller_Crc, 2)
+    
+    def read_ui_crc(self):
+        return super().memRead(Integrated60CommDef.Disp_Crc, 2)
+
     
     def read_eeprom_software_version(self):
         current_controller_software_version = self.read_controller_software_version()
@@ -383,6 +400,19 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
 
         self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkShabbathMode)
 
+    def setColumnShabbath(self, isTurnOn:bool, maxRetry=3):
+        """This method used to set shabbath mode on or off
+
+        Args:
+            isTurnOn (bool): If Ture mean turn on shabbath mode and vice versa
+        """
+        def checkShabbathMode():
+            return True
+        
+        eventToSent = ColumnEventFromDisplay.EVT_SHABBATH_MODE_ON if isTurnOn else ColumnEventFromDisplay.EVT_SHABBATH_MODE_OFF
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkShabbathMode, platform="column")
+
 
     def setShowroomMode(self, isTurnOn:bool, maxRetry=3):
         """This method used to set showroom mode on or off
@@ -398,6 +428,21 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         eventToSent = Integrated60EventFromDisplay.EVT_SIG_SHOWROOM_MODE_ON if isTurnOn else Integrated60EventFromDisplay.EVT_SIG_SHOWROOM_MODE_OFF
 
         self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkShowroomMode)
+
+    def setColumnShowroomMode(self, isTurnOn:bool, maxRetry=3):
+        """This method used to set showroom mode on or off
+
+        Args:
+            isTurnOn (bool): If Ture mean turn on showroom mode and vice versa
+        """
+        def checkShowroomMode():
+            if isTurnOn:
+                return self.readFridgeState() == FridgeState60.SHOW_ROOM_MODE
+            return self.readFridgeState() != FridgeState60.SHOW_ROOM_MODE
+
+        eventToSent = ColumnEventFromDisplay.EVT_SHOWROOM_MODE_ON if isTurnOn else ColumnEventFromDisplay.EVT_SHOWROOM_MODE_OFF
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkShowroomMode, platform="column")
     
     def setDoorAlarm(self, isMute:bool, maxRetry=3):
         """This method used to set door alarm
@@ -429,6 +474,19 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
 
         eventToSent = Integrated60EventFromDisplay.EVT_SIG_DOOR_ALARM_MUTE if isMute else Integrated60EventFromDisplay.EVT_SIG_DOOR_ALARM_UNMUTE
         self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=doorAlarmCheck)
+
+    def setColumnDoorAlarm(self, isMute:bool, maxRetry=3):
+        """This method used to set door alarm
+
+        Args:
+            isMute (bool): If True mean mute door alarm and vice versa
+            maxRetry (int, optional): _description_. Defaults to 3.
+        """
+        def doorAlarmCheck():
+            return True
+
+        eventToSent = ColumnEventFromDisplay.EVT_DOOR_ALARM_MUTE if isMute else ColumnEventFromDisplay.EVT_DOOR_ALARM_UNMUTE
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=doorAlarmCheck, platform="column")
 
     def setDisplaySound(self, isTurnOn: bool, maxRetry=3):
         """This method used to set display sound mute or unmute
@@ -464,7 +522,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
 
 
 
-
+    # Note column and integated have the same EVT number for icemaker so can just use it
     def setIcemaker(self, isTurnOn: bool, maxRetry=3):
         """
         Sets the icemaker to either on or off.
@@ -560,6 +618,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             eventToSent = Integrated60EventFromDisplay.EVT_SIG_DISP_CHANGE_TEMP_UNITS
             self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkTempUnit)
 
+    # Note column used the same EVT number for update setpoint
     def setCompartmentTemp(self, compartmentNumber:int, temp:int, maxRetry=3):
         """This method will set temp with the given compartment number
 
@@ -614,6 +673,35 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         eventToSent = Integrated60EventFromDisplay.EVT_SIG_HSUI_UPDATE
         msgToSent = self._TEventSuper(Integrated60EventFromDisplay.EVT_SIG_HSUI_UPDATE) + bytearray([ambient_temp_count, humidity])
         self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=checkHumidityAndTemp, customizedMsg=msgToSent, isControllerTxEvent=False)
+    
+
+    def setExternalUIHumidityWithTemperature(self, humidity, ambient_temp_count):
+        data = [ambient_temp_count, humidity, 0, 1]
+        super().blockWrite([0x01C0, 0x01C3], data)
+        self.logger.info(f'Set external ui humidity: {data}')
+
+    def setRegionUItoController(self, region):
+        def checkRegionByte():
+            return self.memRead(Integrated60CommDef.REGION_BYTE) == region
+        
+        if region not in Region60:
+            self.logger.error(f'Given region: {region} not support')
+            raise ValueError(f'Given region: {region} not support')
+        
+        eventToSent = Integrated60EventFromDisplay.EVT_SIG_DISP_SET_REGION
+        msgToSent = self._TEventSuper(Integrated60EventFromDisplay.EVT_SIG_DISP_SET_REGION) + bytearray([region])
+        self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=checkRegionByte, customizedMsg=msgToSent, isControllerTxEvent=False)
+    
+
+
+
+    def setControllerRegion(self, region):
+        if region not in Region60:
+            self.logger.error(f'Given region: {region} not support')
+            raise ValueError(f'Given region: {region} not support')
+        self.memWrite(Integrated60CommDef.REGION_BYTE, region)
+        self.logger.info(f'Controller region have set to {Region60(region).name}')
+
 
         
     def setDefrostMaxDuration(self, duration:int):
@@ -713,3 +801,151 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             self.logger.error(f'Position Number {pos_num} not supported')
             raise ValueError(f'Position Number {pos_num} not supported')
         self.memWrite(Integrated60CommDef.Stepper_Valve_Control, pos_covert_dict.get(pos_num))
+
+
+    def setColumnIcemakerPowerBoost(self, isTurnOn: bool):
+        isReset = not isTurnOn
+        self.setResMemBit(ColumnCommDef.ICEMAKER_AO_FLAGS_BY2,1,isReset)
+
+
+    def setColumnDisplaySound(self, isTurnOn: bool, maxRetry=3):
+        """This method used to set display sound mute or unmute
+
+        Args:
+            isTurnOn (bool): If True mean enable display sound (unmute) and vice versa
+            maxRetry (int, optional): _description_. Defaults to 3.
+        """
+        def dummyDisplaySoundCheck():
+            return True
+        
+        eventToSent = ColumnEventFromDisplay.EVT_DISP_KEY_AUDIO_UNMUTE if isTurnOn else ColumnEventFromDisplay.EVT_DISP_KEY_AUDIO_MUTE
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=dummyDisplaySoundCheck, platform="column")
+
+    def setColumnWaterDispenseLock(self, isTurnOn: bool, maxRetry=3):
+        """This method is used to set water dispenser lock
+
+        Args:
+            isTurnOn (bool): If Ture mean turn on water dispenser lock and vice versa
+            maxRetry (int, optional): _description_. Defaults to 3.
+        """
+        def checkWaterDispense():
+            return True
+        
+        eventToSent = ColumnEventFromDisplay.EVT_DISP_WATER_DISPENSE_LOCK if isTurnOn else ColumnEventFromDisplay.EVT_DISP_WATER_DISPENSE_UNLOCK
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkWaterDispense, platform="column")
+
+
+    def setColumnForceIceFlip(self, maxRetry=3):
+        """
+        Sets the force ice flip and sends an event to the display.
+
+        Args:
+            maxRetry (int, optional): The maximum number of attempts to send the event. Defaults to 3.
+
+        Notes:
+            - If the mock display has just been created, you must wait at least 0.5 seconds for the function to work properly.
+
+        Returns:
+            None
+        """
+        def checkForceIceFlip():
+            """
+            Checks whether the ice force flip has been set.
+
+            Returns:
+                bool: True if the ice force flip has been set, False otherwise.
+            """
+            return True
+
+        eventToSent = ColumnEventFromDisplay.EVT_FORCE_ICE_FLIP
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkForceIceFlip, platform="column")
+
+    def setColumnIcemaker(self, isTurnOn: bool, maxRetry=3):
+        """
+        Sets the icemaker to either on or off.
+
+        Args:
+            isTurnOn (bool): If True, turns on the icemaker. If False, turns it off.
+            maxRetry (int, optional): The maximum number of attempts to send the event. Defaults to 3.
+
+        Notes:
+            - The icemaker message includes the compartment (2 bits) and enable (1 bit), represented by TFreezerConfig:
+                - To enable the icemaker, set the compartment to Lower_cmpt (1) and the enable bit to 1: 0b0000 0101 -> 0x05.
+                - To disable the icemaker, set the compartment to Lower_cmpt (1) and the enable bit to 0: 0b0000 0001 -> 0x01.
+
+        Returns:
+            None
+        """
+
+        def checkIcemaker():
+            """
+            Checks whether the icemaker has been set to the desired state.
+
+            Returns:
+                bool: True if the icemaker is in the desired state, False otherwise.
+            """
+            return True
+
+        eventToSent = ColumnEventFromDisplay.EVT_ICE_ON
+        msgToSent = self._TEventSuper(ColumnEventFromDisplay.EVT_ICE_ON, platform="column") + bytearray([0b00000101]) if isTurnOn else self._TEventSuper(ColumnEventFromDisplay.EVT_ICE_ON, platform="column") + bytearray([0b00000001])
+        
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=checkIcemaker, customizedMsg=msgToSent, platform="column")
+
+
+    def setColumnFoodModel(self, compartmentNumber:int, foodmode: int):
+        temp_covert = {
+            0: "Fridge",
+            1: "Pantry",
+            2: "Chill",
+            3: "Freezer",
+            4: "Soft Freezer",
+            5: "Deep Freezer",
+            7: "Invalid"
+        }
+
+        if compartmentNumber == 0:
+            self.logger.warning(f'Previous set Upper mode: {super().memRead(0x01D4)} - {temp_covert[super().memRead(0x01D4)]}')
+            super().memWrite(0x01D4, foodmode)
+            self.logger.warning(f'After set Upper mode: {super().memRead(0x01D4)} - {temp_covert[super().memRead(0x01D4)]}')
+        elif compartmentNumber == 1:
+            self.logger.warning(f'Previous set Lower mode: {super().memRead(0x01D5)} - {temp_covert[super().memRead(0x01D5)]}')
+            super().memWrite(0x01D5, foodmode)
+            self.logger.warning(f'After set Lower mode: {super().memRead(0x01D4)} - {temp_covert[super().memRead(0x01D4)]}')
+    
+    def setColumnStepperValvePosition(self, position:int):
+        """
+        Position map:
+            VALVE_AUTO = 0,
+            VALVE_HOME, 1
+            VALVE_B_CLOSE_C_CLOSE, 2
+            VALVE_B_CLOSE_C_OPEN, 3
+            VALVE_B_OPEN_C_OPEN, 4
+            VALVE_B_OPEN_C_CLOSE, 5
+            VALVE_HOME_POS_INIT, 6 
+            MAX_VALVE_CMD,
+
+        Actual position map: 
+
+            /* SMVC_B_CLOSE_C_CLOSE_POS */  0, SMVC_B_CLOSE_C_CLOSE_POS_VAL, -> 34
+            /* SMVC_B_CLOSE_C_OPEN_POS */   1, SMVC_B_CLOSE_C_OPEN_POS_VAL, -> 100
+            /* SMVC_B_OPEN_C_OPEN_POS */    2, SMVC_B_OPEN_C_OPEN_POS_VAL, -> 154
+            /* SMVC_B_OPEN_C_CLOSE_POS */   3, SMVC_B_OPEN_C_CLOSE_POS_VAL, -> 195
+            /* SMVC_LAST_POS */             4, SMVC_VALVE_POS_INVALID -> 255
+        """
+        def dummyCheck():
+            """
+            Checks whether the ice force flip has been set.
+
+            Returns:
+                bool: True if the ice force flip has been set, False otherwise.
+            """
+            return True
+        
+        if position < 8 and position > -1:
+            eventToSent = ColumnEventFromDisplay.EVT_MANUAL_VALVE_CTRL
+            msgToSent = self._TEventSuper(ColumnEventFromDisplay.EVT_MANUAL_VALVE_CTRL, platform="column") + bytearray([position])
+            
+            self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent, platform="column")

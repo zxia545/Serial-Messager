@@ -65,6 +65,17 @@ class IcemakerTrayState(IntEnum):
     MANUAL_STATE           = 18 
     NO_OF_STATES           = 19
 
+class Region60(IntEnum):
+    AUSTRALIA_NZ = 0
+    USA_CANADA = 1
+    EUROPE = 2
+    CHINA = 3
+    ROW = 4
+    ROW_NC = 5
+    BI = 6
+    MAX_REGION = 7
+    INV_REGION = 0xFF
+
 class FridgeState60(IntEnum):
     """
     Enum class that represent Columns and 60cm Fridge States
@@ -234,6 +245,18 @@ class Integrated60CommDef(IntEnum):
 
 
     THROAT_0_TRACK = 0x03DE
+
+    # CRC - Checksum
+    Controller_Crc = 0x0010 # Need set byte to write or read to 2
+    Disp_Crc = 0x0055 # Need set byte to write or read to 2
+    Humidity_Crc = 0x01CB # Need set byte to write or read to 2
+
+    REGION_BYTE = 0x03A1
+
+
+class ColumnCommDef(IntEnum):
+    ICEMAKER_AO_FLAGS_BY2 = 0x00C5
+
 class Integrated60EEPROM(Enum):
     #######################################################################
     # Any software version equal or above it will be version 2 
@@ -312,3 +335,35 @@ class Integrated60EEPROM(Enum):
     EEPROM_cycleLog_dataC_3_v2 = [0x95BB, 0x95C1] 
     EEPROM_cycleLog_dataC_4_1_v2 = [0x954B, 0x95BA] 
     EEPROM_cycleLog_dataC_4_2_v2 = [0x95C2, 0x97FF]
+
+
+    EEPROM_column_personality = [0x93E0, 0x93E1]
+    EEPROM_column_brownout = [0x9000, 0x9015]
+
+    EEPROM_column_defrost_access_dataA =[0x9000 , 0x9015]
+    EEPROM_column_defrost_access_dataB =[0x9000 , 0x9015]
+    EEPROM_column_defrost_reset_dataA =[0x9000 , 0x97FF]
+    EEPROM_column_defrost_reset_dataB =[0x9000 , 0x97FF]
+    EEPROM_column_periodic_datasave_dataA1 =[0x901B , 0x901C]
+    EEPROM_column_periodic_datasave_dataA2 =[0x93DB , 0x93DC]
+    EEPROM_column_periodic_datasave_dataB1_1 =[0x901B , 0x901B]
+    EEPROM_column_periodic_datasave_dataB1_2 =[0x93DB , 0x93DB]
+    EEPROM_column_periodic_datasave_dataB2_1 =[0x901C , 0x901C]
+    EEPROM_column_periodic_datasave_dataB2_2 =[0x93DC , 0x93DC]
+    EEPROM_column_cycleLogPtr =[0x901E, 0x901E]
+    EEPROM_column_defrostLogPtr =[0x901F, 0x901F]
+
+    EEPROM_column_cycleLog_dataA_1 = [0x9020, 0x933F]
+    EEPROM_column_cycleLog_dataA_2 =[0x9544, 0x97FF]
+
+    EEPROM_column_cycleLog_dataB_1 = [0x9020, 0x9027]
+    EEPROM_column_cycleLog_dataB_2 = [0x9028, 0x933F]
+    EEPROM_column_cycleLog_dataB_3 = [0x9544, 0x954A]
+    EEPROM_column_cycleLog_dataB_4 = [0x954B, 0x97FF] 
+
+    EEPROM_column_cycleLog_dataC_1 = [0x90A8, 0x90AF]
+    EEPROM_column_cycleLog_dataC_2_1 = [0x9028, 0x90A7]
+    EEPROM_column_cycleLog_dataC_2_2 = [0x90B0, 0x933F]
+    EEPROM_column_cycleLog_dataC_3 = [0x95BB, 0x95C1] 
+    EEPROM_column_cycleLog_dataC_4_1 = [0x954B, 0x95BA] 
+    EEPROM_column_cycleLog_dataC_4_2 = [0x95C2, 0x97FF]
