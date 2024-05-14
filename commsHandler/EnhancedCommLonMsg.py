@@ -4,7 +4,9 @@ from .staticVariable.commlon_enum import *
 from .staticVariable.controller_event_enum import *
 from .staticVariable.ui_event_enum import * 
 import serial
-import termios
+import sys
+if sys.platform != 'win32':
+    import terimos
 import logging
 import threading
 import queue
@@ -428,7 +430,7 @@ class CommLonMsg():
         try:
             self._serialComms.flushInput()
             self._serialComms.flushOutput()
-        except termios.error:
+        except Exception:
             self._logger.error("Got a termios.error when trying to reset input buffer")
 
     # =========== Read/Write Helper Functions =============
