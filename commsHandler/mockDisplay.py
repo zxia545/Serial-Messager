@@ -1,5 +1,6 @@
 from serial.serialutil import SerialException
 from .singletonMeta import SingletonMeta
+# from .commLonMsg import CommLonMsg
 from .EnhancedCommLonMsg import CommLonMsg
 from .staticVariable.commlon_enum import *
 from .staticVariable.tempSensorCovert import *
@@ -28,6 +29,76 @@ defrost_heater_mask_dict = {
     9: 0b00000010,
     9: 0b00000100
 }
+
+# TODO: NEED TO UPDATE THIS DICT when add new personality
+valve_manual_personality_covert_dict = {
+    Personality60.TZ_FREEZER_60_PERSONALITY: {
+        0 : 6,
+        12: 5,
+        24: 4,
+        36: 7,
+        48: 3,
+    },
+    Personality60.TZ_FRIDGE_60_PERSONALITY: {
+        0 : 6,
+        12: 3,
+        24: 5,
+        36: 7,
+        48: 4,
+    },
+    Personality60.DZ_FRIDGE_60_PERSONALITY: {
+        0 : 6,
+        12: 4,
+        24: 5,
+        36: 7,
+        48: 3,
+    },
+    Personality60.DZ_FREEZER_60_PERSONALITY: {
+        0 : 6,
+        12: 4,
+        24: 5,
+        36: 7,
+        48: 3,
+    },
+    Personality60.DZ_B_MODEL_60_PERSONALITY: {
+        0 : 6,
+        12: 4,
+        24: 5,
+        36: 7,
+        48: 3,
+    },
+    Personality60.B_MODEL_36_INCH_PERSONALITY: {
+        0 : 6,
+        12: 5,
+        24: 4,
+        36: 7,
+        48: 3,
+    },
+    Personality60.WINE_60_UC_DZ_PERSONALITY: {
+        0 : 6,
+        12: 4,
+        24: 5,
+        36: 7,
+        48: 3,
+    },
+    Personality60.BEV_60_UC_PERSONALITY: {
+        0 : 6,
+        12: 4,
+        24: 5,
+        36: 7,
+        48: 3,
+    }
+}
+
+
+valve_position_to_internal_position ={
+    36: 0,
+    12: 1,
+    48: 3,
+    24: 4,
+    0: 6, 
+}
+
 
 
 class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
@@ -262,8 +333,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         return super().memRead(Integrated60CommDef.Controller_Crc, 2)
     
     def read_ui_crc(self):
-        return super().memRead(Integrated60CommDef.Disp_Crc, 2)
-
+        return super().memRead(0x0010, 2, False)
     
     def read_eeprom_software_version(self):
         current_controller_software_version = self.read_controller_software_version()
@@ -520,6 +590,20 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         
         self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=dummyDisplayLockCheck, customizedMsg=msgToSent, sendFromCtrl=True)
 
+    def playShortBeep(self, maxRetry=3):
+        def dummyDisplaySoundCheck():
+            return True
+        
+        eventToSent = Integrated60EventFromDisplay.EVT_SIG_DISP_PLAY_BEEP         
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=dummyDisplaySoundCheck)
+
+    def playRaspBeep(self, maxRetry=3):
+        def dummyDisplaySoundCheck():
+            return True
+        eventToSent = Integrated60EventFromDisplay.EVT_SIG_DISP_PLAY_RASP         
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=dummyDisplaySoundCheck)
 
 
     # Note column and integated have the same EVT number for icemaker so can just use it
@@ -692,7 +776,35 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         msgToSent = self._TEventSuper(Integrated60EventFromDisplay.EVT_SIG_DISP_SET_REGION) + bytearray([region])
         self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=checkRegionByte, customizedMsg=msgToSent, isControllerTxEvent=False)
     
+    def setFoodModel(self, compartmentNumber:int, foodmode: int):
+        food_mode_covert = {
+            0: "Fridge",                  # DEFAULT_PC_MODE
+            1: "Pantry",                  # PANTRY_MODE
+            2: "Chill",                   # CHILL_MODE
+            3: "Freezer",                 # DEFAULT_FC_MODE
+            4: "Soft Freezer",            # SOFT_FREEZE_MODE
+            5: "Deep Freezer",            # DEEP_FREEZE_MODE
+            6: "Cellar Wine",             # DEFAULT_CELLAR_WINE_MODE
+            7: "Red Wine",                # RED_WINE_MODE
+            8: "White Wine",              # WHITE_WINE_MODE
+            9: "Sparkling Wine",          # SPARK_WINE_MODE
+            10: "Beverage",               # BEVERAGE_MODE
+            11: "Max Number of Modes",    # MAX_NUM_MODES
+            12: "Invalid"                 # INVALID_MODE
+        }
 
+        if compartmentNumber == 0:
+            self.logger.warning(f'Previous set Upper mode: {super().memRead(0x01D4)} - {food_mode_covert[super().memRead(0x01D4)]}')
+            super().memWrite(0x01D4, foodmode)
+            self.logger.warning(f'After set Upper mode: {super().memRead(0x01D4)} - {food_mode_covert[super().memRead(0x01D4)]}')
+        elif compartmentNumber == 1:
+            self.logger.warning(f'Previous set Lower mode: {super().memRead(0x01D5)} - {food_mode_covert[super().memRead(0x01D5)]}')
+            super().memWrite(0x01D5, foodmode)
+            self.logger.warning(f'After set Lower mode: {super().memRead(0x01D5)} - {food_mode_covert[super().memRead(0x01D5)]}')
+        elif compartmentNumber == 2:
+            self.logger.warning(f'Previous set Middle mode: {super().memRead(0x02DD)} - {food_mode_covert[super().memRead(0x02DD)]}')
+            super().memWrite(0x02DD, foodmode)
+            self.logger.warning(f'After set Middle mode: {super().memRead(0x02DD)} - {food_mode_covert[super().memRead(0x02DD)]}')
 
 
     def setControllerRegion(self, region):
@@ -701,7 +813,9 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             raise ValueError(f'Given region: {region} not support')
         self.memWrite(Integrated60CommDef.REGION_BYTE, region)
         self.logger.info(f'Controller region have set to {Region60(region).name}')
-
+    
+    def setWaterFilterExpire(self):
+        self.memWrite(0x0074, 0x50, 1, False)
 
         
     def setDefrostMaxDuration(self, duration:int):
@@ -730,77 +844,28 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             self.setResMemBytes(0x011A, 0x7F, True)
 
     def setStepperValvePosition(self, pos_num:int):
-        # TODO: NEED TO UPDATE THIS DICT when add new personality
-        personality_covert_dict = {
-            Personality60.TZ_FREEZER_60_PERSONALITY: {
-                0 : 6,
-                12: 5,
-                24: 4,
-                36: 7,
-                48: 3,
-            },
-            Personality60.TZ_FRIDGE_60_PERSONALITY: {
-                0 : 6,
-                12: 3,
-                24: 5,
-                36: 7,
-                48: 4,
-            },
-            Personality60.DZ_FRIDGE_60_PERSONALITY: {
-                0 : 6,
-                12: 4,
-                24: 5,
-                36: 7,
-                48: 3,
-            },
-            Personality60.DZ_FREEZER_60_PERSONALITY: {
-                0 : 6,
-                12: 4,
-                24: 5,
-                36: 7,
-                48: 3,
-            },
-            Personality60.DZ_B_MODEL_60_PERSONALITY: {
-                0 : 6,
-                12: 4,
-                24: 5,
-                36: 7,
-                48: 3,
-            },
-            Personality60.B_MODEL_36_INCH_PERSONALITY: {
-                0 : 6,
-                12: 5,
-                24: 4,
-                36: 7,
-                48: 3,
-            },
-            Personality60.WINE_60_UC_DZ_PERSONALITY: {
-                0 : 6,
-                12: 4,
-                24: 5,
-                36: 7,
-                48: 3,
-            },
-            Personality60.BEV_60_UC_PERSONALITY: {
-                0 : 6,
-                12: 4,
-                24: 5,
-                36: 7,
-                48: 3,
-            }
-        }
-
         personality = self.readFridgePersonality()
-        if personality not in personality_covert_dict:
+        if personality not in valve_manual_personality_covert_dict:
             self.logger.error(f'Personality no support')
             raise ValueError(f'Personality no support')
         
-        pos_covert_dict = personality_covert_dict[personality]
+        pos_covert_dict = valve_manual_personality_covert_dict[personality]
         
         if pos_num not in pos_covert_dict:
             self.logger.error(f'Position Number {pos_num} not supported')
             raise ValueError(f'Position Number {pos_num} not supported')
         self.memWrite(Integrated60CommDef.Stepper_Valve_Control, pos_covert_dict.get(pos_num))
+
+    def getStepperValvePosition(self):   
+        pos_num = self.memRead(0x0072)
+        if pos_num not in valve_position_to_internal_position:
+            # sleep for 5 seconds as it may moving
+            time.sleep(5)
+            pos_num = self.memRead(0x0072)
+            if pos_num not in valve_position_to_internal_position:
+                self.logger.error(f'Position Number {pos_num} not supported')
+                raise ValueError(f'Position Number {pos_num} not supported')
+        return valve_position_to_internal_position.get(pos_num)
 
 
     def setColumnIcemakerPowerBoost(self, isTurnOn: bool):
@@ -949,3 +1014,43 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             msgToSent = self._TEventSuper(ColumnEventFromDisplay.EVT_MANUAL_VALVE_CTRL, platform="column") + bytearray([position])
             
             self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent, platform="column")
+    
+
+
+
+    #------------------------------------------------------------------------Manual Control Screen----------------------------------------------------------------
+    
+    
+    
+    def setFakeButtonClick(self, button:int):
+        def dummyCheck():
+            return True
+        
+        eventToSent = Integrated60EventFromController.EVT_SIG_VIEW_KEY_INPUT
+        msgToSent = self._TEventSuper(Integrated60EventFromController.EVT_SIG_VIEW_KEY_INPUT) + bytearray([button])
+        self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent, isControllerTxEvent=True)
+    
+    def setMenuShortClick(self):
+        self.setFakeButtonClick(0)
+        time.sleep(0.5)
+    
+    def setUpShortClick(self):
+        self.setFakeButtonClick(1)
+        time.sleep(0.5)
+
+    def setDownShortClick(self):
+        self.setFakeButtonClick(2)
+        time.sleep(0.5)
+
+    def setReturnShortClick(self):
+        self.setFakeButtonClick(3)
+        time.sleep(0.5)
+
+    def setSelectShortClick(self):
+        self.setFakeButtonClick(4)
+        time.sleep(0.5)
+    
+    def setMenuLongClick(self):
+        self.setFakeButtonClick(6)
+        time.sleep(0.5)
+    

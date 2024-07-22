@@ -580,7 +580,10 @@ class Integrated60EventFromController(IntEnum):
     EVT_UPDATE_LIGHT_MODE = 244,
     EVT_LIGHT_STANDBY = 245,
     EVT_FORCE_ICE_FLIP_COMPLETE = 246,
-    EVT_CONNECTED_DOOR_UNMUTE = 247
+    EVT_CONNECTED_DOOR_UNMUTE = 247,
+
+    EVT_SIG_VIEW_KEY_INPUT=116,
+
 
     @classmethod
     def has_key(cls, name):
@@ -629,6 +632,7 @@ integrated60ControllerTxEventAckOrNotAckDict = {
     Integrated60EventFromController.EVT_CTRL_KEYLOCK                :         CommLonCmds.Acked,    
     Integrated60EventFromController.EVT_CONN_REQ_BOTTLE_CHILL       :         CommLonCmds.Acked,    
     Integrated60EventFromController.EVT_CONN_REQ_FOODMODE_PRESET    :         CommLonCmds.Acked,    
+    Integrated60EventFromController.EVT_SIG_VIEW_KEY_INPUT          :         CommLonCmds.NonAcked,
 }
 
 integrated60ControllerStaticEventSet = {

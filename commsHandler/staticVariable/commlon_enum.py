@@ -200,6 +200,8 @@ class Integrated60CommDef(IntEnum):
     # RAM address for door state
     RAM_door_state = 0x000D
 
+    PRODUCT_WIDTH = 0x000C 
+
     # RAM address for defrost data recover DVP
     FROST_BUILD_COMPARTMENT_SELECTION = 0x0180  # set to 0 mean upper, 1 mean lower
     Maximum_Rate_Mass_Deposit = 0x0198          # Only MSB at this location, use special memRead method to read full value (4-bytes)
@@ -253,6 +255,35 @@ class Integrated60CommDef(IntEnum):
 
     REGION_BYTE = 0x03A1
 
+    UPPER_CUT_IN_MSB = 0x04A0
+    UPPER_CUT_IN_LSB = 0x04A1
+    LOWER_CUT_IN_MSB = 0x04A2
+    LOWER_CUT_IN_LSB = 0x04A3
+    MID_CUT_IN_MSB = 0x04A4
+    MID_CUT_IN_LSB = 0x04A5
+
+    UPPER_CUT_OUT_MSB = 0x00B0
+    UPPER_CUT_OUT_LSB = 0x00B1
+    LOWER_CUT_OUT_MSB = 0x00B2
+    LOWER_CUT_OUT_LSB = 0x00B3
+    MID_CUT_OUT_MSB = 0x03AB
+    MID_CUT_OUT_LSB = 0x03AC
+
+    SEC_UL_UPPER_MSB = 0x0490
+    SEC_UL_UPPER_LSB = 0x0491
+    SEC_UL_LOWER_MSB = 0x0492
+    SEC_UL_LOWER_LSB = 0x0493
+    SEC_UL_MID_MSB = 0x0494
+    SEC_UL_MID_LSB = 0x0495
+
+    SEC_LL_UPPER_MSB = 0x0496
+    SEC_LL_UPPER_LSB = 0x0497
+    SEC_LL_LOWER_MSB = 0x0498
+    SEC_LL_LOWER_LSB = 0x0499
+    SEC_LL_MID_MSB = 0x049A
+    SEC_LL_MID_LSB = 0x049B
+
+    VALVE_CONTROL_WORKING_TABLE_INDEX = 0x0246
 
 class ColumnCommDef(IntEnum):
     ICEMAKER_AO_FLAGS_BY2 = 0x00C5
