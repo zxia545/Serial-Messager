@@ -30,10 +30,10 @@ Clone the repository and navigate into the project directory:
 Describe how to use your project, including example code if possible. For instance:
 
 ```python
-from mockDisplay import MockDisplay
+from commsHandler.mockDisplay import MockDisplay
 
-# Use the module functions
-mockDisplay = MockDisplay("/dev/commlon0")
+
+mockDisplay = MockDisplay("COM6")
 ```
 
 ## Contributing
