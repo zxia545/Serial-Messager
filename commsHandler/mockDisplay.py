@@ -1016,6 +1016,15 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent, platform="column")
     
 
+    def setFactoryReset(self):
+        """
+        This method will simulate the TX factory reset event that UI send to controller
+        """
+        def dummyCheck():
+            return True
+        eventToSent = Integrated60EventFromDisplay.EVT_SIG_FACTORY_RST
+
+        self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, platform="Integrated60")
 
 
     #------------------------------------------------------------------------Manual Control Screen----------------------------------------------------------------
