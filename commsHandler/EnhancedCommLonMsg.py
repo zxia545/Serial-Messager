@@ -468,7 +468,6 @@ class CommLonMsg():
             for current_address in range(start_address, end_address + 1):
                 for _ in range(self._maxNumOfTries):
                     rx_data = self._clear_single_eeprom_address(current_address)
-                    # current_val = self.blockRead([current_address,current_address])[0]
                     current_val = 0xFF
                     if rx_data == [0] and current_val == 0xFF:
                         self._logger.info(f'Current EEPROM address: {self._int_to_hex_string(current_address)} - value: {current_val}')
@@ -495,6 +494,84 @@ class CommLonMsg():
         sLSB = address & 0xFF
         msg = [sMSB, sLSB, 0xFF]
         return self._send_packet(CommLonCmds.BlockWrite, msg)
+
+    def clearEEPROMBlock_v2(self, eeprom_addresses):
+        """
+        Clears the specified EEPROM block.
+
+        Args:
+            eeprom_addresses (list): List containing the start and end addresses of the EEPROM block.
+
+        Returns:
+            bool: True if the EEPROM block is cleared successfully.
+        """
+        event = threading.Event()
+        task = lambda addr_start, addr_end: self._perform_clearEEPROMBlock_v2(addr_start, addr_end)
+        self.task_queue.put((task, event, (eeprom_addresses[0], eeprom_addresses[1])))
+        event.wait()  # Wait here until the task is processed
+        if hasattr(task, 'exception'):
+            raise task.exception
+        return task.result
+
+    def _perform_clearEEPROMBlock_v2(self, start_address, end_address):
+        """
+        Clears the specified EEPROM block.
+
+        Args:
+            start_address (int): The start address of the EEPROM block.
+            end_address (int): The end address of the EEPROM block.
+
+        Returns:
+            bool: True if the EEPROM block is cleared successfully.
+        """
+        with self._lock:
+            current_address = start_address
+
+            while current_address < end_address:
+                # Calculate the next chunk, with a maximum of 0x10 addresses per operation
+                chunk_end_address = min(current_address + 0x10, end_address)
+
+                for _ in range(self._maxNumOfTries):
+                    # Attempt to clear the EEPROM addresses in the current range
+                    rx_data = self._clear_eeprom_address_v2(current_address, chunk_end_address)
+
+                    current_val = 0xFF  # Placeholder for actual blockRead or validation if needed
+                    if rx_data == [0] and current_val == 0xFF:
+                        self._logger.info(f'Cleared EEPROM addresses: {self._int_to_hex_string(current_address)} to {self._int_to_hex_string(chunk_end_address)}')
+                        break
+                    else:
+                        self._logger.warn(f'Failed to clear EEPROM addresses: {self._int_to_hex_string(current_address)} to {self._int_to_hex_string(chunk_end_address)}. Received rx_data: {rx_data}')
+                        self._logger.warn(f'Retrying clear operation for addresses: {self._int_to_hex_string(current_address)} to {self._int_to_hex_string(chunk_end_address)}')
+                else:
+                    self._logger.error(f'Failed to clear EEPROM addresses: {self._int_to_hex_string(current_address)} to {self._int_to_hex_string(chunk_end_address)} after {self._maxNumOfTries} retries.')
+                    return False  # Return False if any chunk fails after retries
+
+                # Move to the next chunk
+                current_address = chunk_end_address
+
+            return True
+
+    def _clear_eeprom_address_v2(self, start_address, end_address):
+        """
+        Clears a range of EEPROM addresses.
+
+        Args:
+            start_address (int): The starting EEPROM address to clear.
+            end_address (int): The ending EEPROM address to clear (inclusive).
+
+        Returns:
+            list: Received data from the _send_packet method.
+        """
+        if end_address - start_address > 0x10:
+            raise ValueError("Address range exceeds the maximum allowed 0x10 per clear operation.")
+        
+        sMSB = start_address >> 8
+        sLSB = start_address & 0xFF
+        eMSB = end_address >> 8
+        eLSB = end_address & 0xFF
+        msg = [sMSB, sLSB, eMSB, eLSB]
+    
+        return self._send_packet(CommLonCmds.ClearE2, msg)
     
     def blockWrite(self, eeproaddress_list: list, values: Union[int, list]):
         """

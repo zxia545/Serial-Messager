@@ -442,6 +442,11 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
                 time.sleep(0.5)
                 continue
             self.attempt_to_set_display_personality(personality, ui_personality)
+
+            # if personality is column then we need to write the width as well
+            # default to be 24 inch
+            if personality < Personality60.DZ_FRIDGE_60_PERSONALITY:
+                self.set_column_product_width(width=1)
             return
 
         self.logger.error(f'Unable to set display personality after {maxRetry} tries.')
@@ -455,7 +460,17 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         msgToSent = self._TEventSuper(Integrated60EventFromController.EVT_DISP_PERSONALITY_WRITE, sendFromCtrl=True) + bytearray([personality])
 
         self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=personality_check, customizedMsg=msgToSent, isControllerTxEvent=True)
-  
+    
+    def set_column_product_width(self, width: int=1, maxRetry: int=3):
+        def dummyCheck():
+            return True
+
+        eventToSent = Integrated60EventFromController.EVT_DISP_WIDTH_WRITE
+        msgToSent = self._TEventSuper(Integrated60EventFromController.EVT_DISP_WIDTH_WRITE, sendFromCtrl=True) + bytearray([width])
+
+        self.sentAndCheckTxEvent(maxRetry=maxRetry, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent, isControllerTxEvent=True)
+    
+
     def setShabbath(self, isTurnOn:bool, maxRetry=3):
         """This method used to set shabbath mode on or off
 
@@ -867,6 +882,10 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
                 raise ValueError(f'Position Number {pos_num} not supported')
         return valve_position_to_internal_position.get(pos_num)
 
+    def setIcemakerPowerBoost(self, isTurnOn: bool):
+        isReset = not isTurnOn
+        self.setResMemBit(Integrated60CommDef.ICEMAKER_AO_FLAGS_BY2,1,isReset)
+
 
     def setColumnIcemakerPowerBoost(self, isTurnOn: bool):
         isReset = not isTurnOn
@@ -980,6 +999,41 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             super().memWrite(0x01D5, foodmode)
             self.logger.warning(f'After set Lower mode: {super().memRead(0x01D4)} - {temp_covert[super().memRead(0x01D4)]}')
     
+    def setFaceliftStepperValvePosition(self, position:int):
+        """
+        Position map:
+            VALVE_AUTO = 0,
+            VALVE_HOME, 1
+            VALVE_B_CLOSE_C_CLOSE, 2
+            VALVE_B_CLOSE_C_OPEN, 3
+            VALVE_B_OPEN_C_OPEN, 4
+            VALVE_B_OPEN_C_CLOSE, 5
+            VALVE_HOME_POS_INIT, 6 
+            MAX_VALVE_CMD,
+
+        Actual position map: 
+
+            /* SMVC_B_CLOSE_C_CLOSE_POS */  0, SMVC_B_CLOSE_C_CLOSE_POS_VAL, -> 34
+            /* SMVC_B_CLOSE_C_OPEN_POS */   1, SMVC_B_CLOSE_C_OPEN_POS_VAL, -> 100
+            /* SMVC_B_OPEN_C_OPEN_POS */    2, SMVC_B_OPEN_C_OPEN_POS_VAL, -> 154
+            /* SMVC_B_OPEN_C_CLOSE_POS */   3, SMVC_B_OPEN_C_CLOSE_POS_VAL, -> 195
+            /* SMVC_LAST_POS */             7, SMVC_VALVE_POS_INVALID -> 255
+        """
+        def dummyCheck():
+            """
+            Checks whether the ice force flip has been set.
+
+            Returns:
+                bool: True if the ice force flip has been set, False otherwise.
+            """
+            return True
+        
+        if position < 8 and position > -1:
+            eventToSent = Integrated60EventFromDisplay.EVT_SIG_MANUAL_VALVE_CTRL
+            msgToSent = self._TEventSuper(Integrated60EventFromDisplay.EVT_SIG_MANUAL_VALVE_CTRL) + bytearray([position])
+            
+            self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent)
+
     def setColumnStepperValvePosition(self, position:int):
         """
         Position map:
@@ -1014,8 +1068,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             msgToSent = self._TEventSuper(ColumnEventFromDisplay.EVT_MANUAL_VALVE_CTRL, platform="column") + bytearray([position])
             
             self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent, platform="column")
-    
-
+                
     def setFactoryReset(self):
         """
         This method will simulate the TX factory reset event that UI send to controller
@@ -1027,9 +1080,8 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
         self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, platform="Integrated60")
 
 
+
     #------------------------------------------------------------------------Manual Control Screen----------------------------------------------------------------
-    
-    
     
     def setFakeButtonClick(self, button:int):
         def dummyCheck():
@@ -1061,5 +1113,13 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
     
     def setMenuLongClick(self):
         self.setFakeButtonClick(6)
+        time.sleep(0.5)
+
+    def setDiagModeClick(self):
+        self.setFakeButtonClick(12)
+        time.sleep(0.5)
+    
+    def setShowRoomClick(self):
+        self.setFakeButtonClick(13)
         time.sleep(0.5)
     

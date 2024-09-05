@@ -285,6 +285,8 @@ class Integrated60CommDef(IntEnum):
 
     VALVE_CONTROL_WORKING_TABLE_INDEX = 0x0246
 
+    ICEMAKER_AO_FLAGS_BY2 = 0x00C5
+
 class ColumnCommDef(IntEnum):
     ICEMAKER_AO_FLAGS_BY2 = 0x00C5
 
