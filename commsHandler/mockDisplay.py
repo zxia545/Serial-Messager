@@ -169,7 +169,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
 
             # Check callback method
             if checkCallbackMethod():
-                self.logger.info(f'{"Controller" if isControllerTxEvent else "Display"} {event_name} has been set')
+                self.logger.info(f'{"Controller" if isControllerTxEvent else "Display"} {event_name} has been set, Message be set is {self._bytes_to_hex_string(msg)}')
                 return
 
             self.logger.warning(f'Failed to send {"Controller" if isControllerTxEvent else "Display"} {txEvent} - Retry Time {i}')
@@ -347,6 +347,9 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             return 'v1'
 
     # =========== The methods below are used to set controller  =============
+    def clearAllEEPROM(self):
+        super().clearEEPROMBlock_v2([0x9000, 0x9BFF])
+
     def setIcemakerHeaterEnableFlag(self, isReset:bool=False):
         super().setResMemBit(Integrated60CommDef.RAM_icemakerFlag3, 1, isReset)
     
@@ -861,8 +864,8 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
     def setStepperValvePosition(self, pos_num:int):
         personality = self.readFridgePersonality()
         if personality not in valve_manual_personality_covert_dict:
-            self.logger.error(f'Personality no support')
-            raise ValueError(f'Personality no support')
+            self.logger.error(f'Personality: {personality} no support')
+            raise ValueError(f'Personality: {personality} no support')
         
         pos_covert_dict = valve_manual_personality_covert_dict[personality]
         
@@ -884,7 +887,7 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
 
     def setIcemakerPowerBoost(self, isTurnOn: bool):
         isReset = not isTurnOn
-        self.setResMemBit(Integrated60CommDef.ICEMAKER_AO_FLAGS_BY2,1,isReset)
+        self.setResMemBit(Integrated60CommDef.ICEMAKER_AO_FLAGS_BY2,0,isReset)
 
 
     def setColumnIcemakerPowerBoost(self, isTurnOn: bool):
@@ -1002,22 +1005,27 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
     def setFaceliftStepperValvePosition(self, position:int):
         """
         Position map:
-            VALVE_AUTO = 0,
-            VALVE_HOME, 1
-            VALVE_B_CLOSE_C_CLOSE, 2
-            VALVE_B_CLOSE_C_OPEN, 3
-            VALVE_B_OPEN_C_OPEN, 4
-            VALVE_B_OPEN_C_CLOSE, 5
-            VALVE_HOME_POS_INIT, 6 
-            MAX_VALVE_CMD,
+        SMVC_AUTO = 0,
+        SMVC_MANUAL_HOME_POS_RQ=1,
+        SMVC_MANUAL_B_CLOSE_C_CLOSE_RQ=2,
+        SMVC_MANUAL_B_CLOSE_C_OPEN_RQ=3,
+        SMVC_MANUAL_B_OPEN_C_OPEN_RQ=4,
+        SMVC_MANUAL_B_OPEN_C_CLOSE_RQ=5,
+        SMVC_MANUAL_HOME_POS_INIT_RQ=6,
+        SMVC_MANUAL_WAIT_IN_POS=7,
+        SMVC_MANUAL_HOME_POS_IN_POS=8,
+        SMVC_MANUAL_B_CLOSE_C_CLOSE_IN_POS=9,
+        SMVC_MANUAL_B_CLOSE_C_OPEN_IN_POS=10,
+        SMVC_MANUAL_B_OPEN_C_OPEN_IN_POS=11,
+        SMVC_MANUAL_B_OPEN_C_CLOSE_IN_POS=12,
 
         Actual position map: 
-
-            /* SMVC_B_CLOSE_C_CLOSE_POS */  0, SMVC_B_CLOSE_C_CLOSE_POS_VAL, -> 34
-            /* SMVC_B_CLOSE_C_OPEN_POS */   1, SMVC_B_CLOSE_C_OPEN_POS_VAL, -> 100
-            /* SMVC_B_OPEN_C_OPEN_POS */    2, SMVC_B_OPEN_C_OPEN_POS_VAL, -> 154
-            /* SMVC_B_OPEN_C_CLOSE_POS */   3, SMVC_B_OPEN_C_CLOSE_POS_VAL, -> 195
-            /* SMVC_LAST_POS */             7, SMVC_VALVE_POS_INVALID -> 255
+        SMVC_MANUAL_HOME_POS_RQ=1 -> current, request, target = 216, 0, 216
+        SMVC_MANUAL_B_CLOSE_C_CLOSE_RQ=2 -> current, request, target = x, 34, x
+        SMVC_MANUAL_B_CLOSE_C_OPEN_RQ=3 -> current, request, target = x, 100, x
+        SMVC_MANUAL_B_OPEN_C_OPEN_RQ=4 -> current, request, target = x, 154, x
+        SMVC_MANUAL_B_OPEN_C_CLOSE_RQ=5 -> current, request, target = x, 195, x
+        SMVC_MANUAL_HOME_POS_INIT_RQ=6 -> current, request, target = 216, 0, 216
         """
         def dummyCheck():
             """
@@ -1028,11 +1036,12 @@ class MockDisplay(CommLonMsg, metaclass=SingletonMeta):
             """
             return True
         
-        if position < 8 and position > -1:
-            eventToSent = Integrated60EventFromDisplay.EVT_SIG_MANUAL_VALVE_CTRL
-            msgToSent = self._TEventSuper(Integrated60EventFromDisplay.EVT_SIG_MANUAL_VALVE_CTRL) + bytearray([position])
+        if position < 7 and position > 0:
+            self.memWrite(0x0070, position)
+            # eventToSent = Integrated60EventFromDisplay.EVT_SIG_MANUAL_VALVE_CTRL
+            # msgToSent = self._TEventSuper(Integrated60EventFromDisplay.EVT_SIG_MANUAL_VALVE_CTRL) + bytearray([position])
             
-            self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent)
+            # self.sentAndCheckTxEvent(maxRetry=3, txEvent=eventToSent, checkCallbackMethod=dummyCheck, customizedMsg=msgToSent)
 
     def setColumnStepperValvePosition(self, position:int):
         """

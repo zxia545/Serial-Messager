@@ -4,9 +4,7 @@ from .staticVariable.commlon_enum import *
 from .staticVariable.controller_event_enum import *
 from .staticVariable.ui_event_enum import * 
 import serial
-import sys
-if sys.platform != 'win32':
-    import terimos
+import termios
 import logging
 import threading
 import queue
@@ -435,7 +433,7 @@ class CommLonMsg():
 
     # =========== Read/Write Helper Functions =============
 
-    def clearEEPROMBlock(self, eeprom_addresses):
+    def clearEEPROMBlock(self, eeprom_addresses, to_controller=True):
         """
         Clears the specified EEPROM block.
 
@@ -446,14 +444,14 @@ class CommLonMsg():
             bool: True if the EEPROM block is cleared successfully.
         """
         event = threading.Event()
-        task = lambda addr_start, addr_end: self._perform_clearEEPROMBlock(addr_start, addr_end)
-        self.task_queue.put((task, event, (eeprom_addresses[0], eeprom_addresses[1])))
+        task = lambda addr_start, addr_end, to_controller: self._perform_clearEEPROMBlock(addr_start, addr_end, to_controller)
+        self.task_queue.put((task, event, (eeprom_addresses[0], eeprom_addresses[1], to_controller)))
         event.wait()  # Wait here until the task is processed
         if hasattr(task, 'exception'):
             raise task.exception
         return task.result
 
-    def _perform_clearEEPROMBlock(self, start_address, end_address):
+    def _perform_clearEEPROMBlock(self, start_address, end_address, to_controller=True):
         """
         Clears the specified EEPROM block.
 
@@ -467,7 +465,7 @@ class CommLonMsg():
         with self._lock:    
             for current_address in range(start_address, end_address + 1):
                 for _ in range(self._maxNumOfTries):
-                    rx_data = self._clear_single_eeprom_address(current_address)
+                    rx_data = self._clear_single_eeprom_address(current_address, to_controller)
                     current_val = 0xFF
                     if rx_data == [0] and current_val == 0xFF:
                         self._logger.info(f'Current EEPROM address: {self._int_to_hex_string(current_address)} - value: {current_val}')
@@ -480,7 +478,7 @@ class CommLonMsg():
                     self._logger.error(f'Failed to clear EEPROM address: {self._int_to_hex_string(current_address)} after {self._maxNumOfTries} retries.')
             return True
 
-    def _clear_single_eeprom_address(self, address):
+    def _clear_single_eeprom_address(self, address, to_controller=True):
         """
         Clears a single EEPROM address.
 
@@ -490,12 +488,13 @@ class CommLonMsg():
         Returns:
             list: Received data from the _send_packet method.
         """
+        send_from_ctrl = not to_controller
         sMSB = address >> 8
         sLSB = address & 0xFF
         msg = [sMSB, sLSB, 0xFF]
-        return self._send_packet(CommLonCmds.BlockWrite, msg)
+        return self._send_packet(CommLonCmds.BlockWrite, msg, send_from_ctrl=send_from_ctrl)
 
-    def clearEEPROMBlock_v2(self, eeprom_addresses):
+    def clearEEPROMBlock_v2(self, eeprom_addresses, to_controller=True):
         """
         Clears the specified EEPROM block.
 
@@ -506,14 +505,14 @@ class CommLonMsg():
             bool: True if the EEPROM block is cleared successfully.
         """
         event = threading.Event()
-        task = lambda addr_start, addr_end: self._perform_clearEEPROMBlock_v2(addr_start, addr_end)
-        self.task_queue.put((task, event, (eeprom_addresses[0], eeprom_addresses[1])))
+        task = lambda addr_start, addr_end, to_controller: self._perform_clearEEPROMBlock_v2(addr_start, addr_end, to_controller)
+        self.task_queue.put((task, event, (eeprom_addresses[0], eeprom_addresses[1], to_controller)))
         event.wait()  # Wait here until the task is processed
         if hasattr(task, 'exception'):
             raise task.exception
         return task.result
 
-    def _perform_clearEEPROMBlock_v2(self, start_address, end_address):
+    def _perform_clearEEPROMBlock_v2(self, start_address, end_address, to_controller=True):
         """
         Clears the specified EEPROM block.
 
@@ -533,7 +532,7 @@ class CommLonMsg():
 
                 for _ in range(self._maxNumOfTries):
                     # Attempt to clear the EEPROM addresses in the current range
-                    rx_data = self._clear_eeprom_address_v2(current_address, chunk_end_address)
+                    rx_data = self._clear_eeprom_address_v2(current_address, chunk_end_address, to_controller)
 
                     current_val = 0xFF  # Placeholder for actual blockRead or validation if needed
                     if rx_data == [0] and current_val == 0xFF:
@@ -551,7 +550,7 @@ class CommLonMsg():
 
             return True
 
-    def _clear_eeprom_address_v2(self, start_address, end_address):
+    def _clear_eeprom_address_v2(self, start_address, end_address, to_controller=True):
         """
         Clears a range of EEPROM addresses.
 
@@ -562,6 +561,7 @@ class CommLonMsg():
         Returns:
             list: Received data from the _send_packet method.
         """
+        send_from_ctrl = not to_controller
         if end_address - start_address > 0x10:
             raise ValueError("Address range exceeds the maximum allowed 0x10 per clear operation.")
         
@@ -570,8 +570,7 @@ class CommLonMsg():
         eMSB = end_address >> 8
         eLSB = end_address & 0xFF
         msg = [sMSB, sLSB, eMSB, eLSB]
-    
-        return self._send_packet(CommLonCmds.ClearE2, msg)
+        return self._send_packet(CommLonCmds.ClearE2, msg, send_from_ctrl=send_from_ctrl)
     
     def blockWrite(self, eeproaddress_list: list, values: Union[int, list]):
         """
@@ -734,7 +733,7 @@ class CommLonMsg():
         raise exception_type(message)
 
 
-    def blockRead(self, address_list):
+    def blockRead(self, address_list, readController=True):
         """
         Reads a block of memory from EEPROM between the start and end addresses.
 
@@ -746,14 +745,14 @@ class CommLonMsg():
         """
 
         event = threading.Event()
-        task = lambda addrStart, addrEnd: self._perform_blockRead(addrStart, addrEnd)
-        self.task_queue.put((task, event, (address_list[0], address_list[1])))
+        task = lambda addrStart, addrEnd, readController: self._perform_blockRead(addrStart, addrEnd, readController)
+        self.task_queue.put((task, event, (address_list[0], address_list[1], readController)))
         event.wait()  # Wait here until the task is processed
         if hasattr(task, 'exception'):
             raise task.exception
         return task.result
     
-    def _perform_blockRead(self, start_address, end_address) -> list:
+    def _perform_blockRead(self, start_address, end_address, readController) -> list:
         """
         Reads a block of memory from EEPROM between the start and end addresses.
 
@@ -765,6 +764,7 @@ class CommLonMsg():
             list: List of integers representing the read values from EEPROM.
         """
         with self._lock:
+            send_from_ctrl = not readController
             total_data = []
             block_size = 0x1F
 
@@ -772,7 +772,8 @@ class CommLonMsg():
                 block_end = min(current_block_start + block_size - 1, end_address)
                 msg = self._format_block_message(current_block_start, block_end)
 
-                read_values = self._send_packet(CommLonCmds.BlockRead, msg)
+                
+                read_values = self._send_packet(CommLonCmds.BlockRead, msg, send_from_ctrl=send_from_ctrl)
                 if read_values:
                     total_data.extend(read_values)
                 else:
