@@ -634,7 +634,7 @@ integrated60ControllerTxEventAckOrNotAckDict = {
     Integrated60EventFromController.EVT_CTRL_KEYLOCK                :         CommLonCmds.Acked,    
     Integrated60EventFromController.EVT_CONN_REQ_BOTTLE_CHILL       :         CommLonCmds.Acked,    
     Integrated60EventFromController.EVT_CONN_REQ_FOODMODE_PRESET    :         CommLonCmds.Acked,    
-    Integrated60EventFromController.EVT_SIG_VIEW_KEY_INPUT          :         CommLonCmds.NonAcked,
+    Integrated60EventFromController.EVT_SIG_VIEW_KEY_INPUT          :         CommLonCmds.Acked,
     Integrated60EventFromController.EVT_DISP_WIDTH_WRITE            :         CommLonCmds.Acked,
 }
 

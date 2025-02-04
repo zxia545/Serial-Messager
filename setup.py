@@ -1,13 +1,25 @@
+from setuptools import setup, Extension, find_packages
+import sys
 
-from setuptools import setup, find_packages
+print(f'Current platform: {sys.platform}')
+ext_modules = []
+if sys.platform.startswith("linux"):
+    ext_modules.append(
+        Extension(
+            'fastserial',                # The module name (import fastserial)
+            sources=['commsHandler/fastserial.c'],  # Adjusted path to the C file
+        )
+    )
+
 with open('README.md') as f:
     long_description = f.read()
 
 setup(
     name='commsHandler',
-    version='0.1.4',
+    version='0.2.0',
     packages=find_packages(),
     install_requires=['pyserial'],
+    ext_modules=ext_modules,
     author='Tony Xiao',
     author_email='tony.xiao@fisherpaykel.com',
     description='A project for handling serial messaging services',

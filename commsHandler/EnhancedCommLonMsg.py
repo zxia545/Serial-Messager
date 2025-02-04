@@ -11,6 +11,15 @@ import queue
 import serial
 from serial.serialutil import SerialException
 from typing import Union
+import sys
+
+try:
+    # Try to import the fast C extension.
+    import fastserial
+    USE_FASTSERIAL = True
+except ImportError:
+    # If the import fails, use the Python implementation.
+    USE_FASTSERIAL = False
 
 class CommLonMsg():
     """
@@ -127,32 +136,36 @@ class CommLonMsg():
         self._logger.info(f'Closed serial commLonMsg')
         return
 
-    def _commsRead(self, num_of_bytes: int) -> bytes:
+    def _commsRead(self, num_of_bytes: int, timeout_ms: int = 0) -> bytes:
         """
         Reads the specified number of bytes from the serial communication port.
-
+        Uses the fast C extension routine on Linux if available; otherwise, uses the
+        pure-Python implementation.
+        
         Args:
-            num_of_bytes (int): The number of bytes to read from the serial port.
-
+            num_of_bytes (int): The number of bytes to read.
+            timeout_ms (int, optional): Timeout in milliseconds (0 means block indefinitely).
+            
         Returns:
             bytes: The bytes read from the serial port.
         """
-        bytes_list = bytearray()
-
-        # Continue reading until the specified number of bytes is obtained
-        while num_of_bytes > 0:
-            available_bytes = self._serialComms.inWaiting()
-
-            if available_bytes:
-                # Read the minimum of the remaining bytes or the available bytes
-                to_read = min(num_of_bytes, available_bytes)
-                
-                new_bytes = self._serialComms.read(to_read)
-                bytes_list.extend(new_bytes)
-                
-                num_of_bytes -= to_read
-
-        return bytes(bytes_list)
+        if USE_FASTSERIAL:
+            # Obtain the file descriptor from the pySerial instance.
+            fd = self._serialComms.fileno()
+            # Call the C extension function.
+            return fastserial.comms_read(fd, num_of_bytes, timeout_ms)
+        else:
+            # Pure-Python implementation:
+            bytes_list = bytearray()
+            while num_of_bytes > 0:
+                available_bytes = self._serialComms.inWaiting()
+                if available_bytes:
+                    # Read the minimum of the remaining bytes or the available bytes.
+                    to_read = min(num_of_bytes, available_bytes)
+                    new_bytes = self._serialComms.read(to_read)
+                    bytes_list.extend(new_bytes)
+                    num_of_bytes -= to_read
+            return bytes(bytes_list)
 
     # =========== Low-level data sending/recieving FNs =============
     # NOTE: These methods below are private methods should only be accessed by internal class function
@@ -323,13 +336,13 @@ class CommLonMsg():
                 Specifically, the first element is a list of data bytes and the second element is a list containing the command byte.
                 An exception is raised if the packet is found to be invalid, facilitating robust error handling.
         """
-        lHdrs = self._commsRead(3)
-        header = self._commsRead(2)
-        seqId = self._commsRead(1)
-        command = self._commsRead(1)
+        lHdrs = self._commsRead(3, 0)
+        header = self._commsRead(2, 0)
+        seqId = self._commsRead(1, 0)
+        command = self._commsRead(1, 0)
         len_data_bytes = lHdrs[2]
-        data = self._commsRead(len_data_bytes)
-        crc = self._commsRead(2)  # Read CRC32 bytes
+        data = self._commsRead(len_data_bytes, 0)
+        crc = self._commsRead(2, 0)  # Read CRC32 bytes
 
         # checking the received packet is correct
         rece_pkt = bytearray([*lHdrs, *header, *seqId, *command, *data])
@@ -375,7 +388,7 @@ class CommLonMsg():
             full_packet = self._create_packet(command, message, send_from_ctrl)
             self._flush_serial_buffers()
 
-            if self._send_and_validate_echo(full_packet):
+            if self._send_and_validate_echo(full_packet, ignore_echo_block):
                 if command == CommLonCmds.NonAcked:
                     self._retry_count = 0
                     return None
@@ -386,8 +399,8 @@ class CommLonMsg():
                     return self._rxedData
 
             self._handle_retry()
-
-    def _send_and_validate_echo(self, packet):
+    
+    def _send_and_validate_echo(self, packet, ignore_echo_block):
         """
         Sends a packet and validates the echo from the hardware.
 
@@ -399,9 +412,13 @@ class CommLonMsg():
         """
         for i in range(self._max_echo_retries):
             self._serialComms.write(packet)
-            if packet == self._commsRead(len(packet)):
+            # time.sleep(0.02)
+            read_packet = self._commsRead(len(packet),0)
+            if ignore_echo_block or packet == read_packet:
                 return True
-            self._logger.debug(f'Retry for receiving hardware echo message - {i+1}')
+            # self._logger.debug(f'Input bytes: {self._bytes_to_hex_string(bytearray(packet))}')
+            # self._logger.debug(f'Read bytes: {self._bytes_to_hex_string(bytearray(read_packet))}')
+            # self._logger.debug(f'Retry for receiving hardware echo message - {i+1}')
             time.sleep(self._echo_retry_delay_time)
             self._flush_serial_buffers()
         return False
@@ -428,8 +445,8 @@ class CommLonMsg():
         try:
             self._serialComms.flushInput()
             self._serialComms.flushOutput()
-        except Exception:
-            self._logger.error("Got a termios.error when trying to reset input buffer")
+        except Exception as e:
+            self._logger.error(f"Got an error when try to flush input and output: {e.message}")
 
     # =========== Read/Write Helper Functions =============
 
